@@ -536,10 +536,6 @@ export default function POSBilling() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [editingCatalogId, setEditingCatalogId] = useState<string | null>(null);
   const [activeInvoiceId, setActiveInvoiceId] = useState<string | null>(null);
-  // Which invoice page has finished loading in the popup (tracked per invoice, so a reopen can never get stuck on the quick preview).
-  const [loadedInvoiceId, setLoadedInvoiceId] = useState<string | null>(null);
-  const invoiceLoaded = !!activeInvoiceId && loadedInvoiceId === activeInvoiceId;
-  useEffect(() => { if (!activeInvoiceId) setLoadedInvoiceId(null); }, [activeInvoiceId]);
   const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
 
   // Analytics filter/navigation states
@@ -5179,20 +5175,11 @@ export default function POSBilling() {
                 </button>
               </div>
             </div>
-            <div className="flex-1 w-full bg-[#F5EFE6] overflow-hidden relative">
-              {!invoiceLoaded && (() => {
-                const o = orders.find((x) => x.id === activeInvoiceId);
-                return o ? (
-                  <div className="absolute inset-0 overflow-y-auto bg-white">
-                    <div className="mx-auto max-w-[680px]"><OrderBody o={o} /></div>
-                  </div>
-                ) : null;
-              })()}
+            <div className="flex-1 w-full bg-[#F7F7F7] overflow-hidden relative">
               <iframe
                 key={activeInvoiceId}
                 src={`/invoice/${activeInvoiceId}`}
-                onLoad={() => setLoadedInvoiceId(activeInvoiceId)}
-                className={`w-full h-full border-none absolute inset-0 transition-opacity duration-150 ${invoiceLoaded ? "opacity-100" : "opacity-0"}`}
+                className="w-full h-full border-none absolute inset-0"
                 title={`Invoice ${activeInvoiceId}`}
               />
             </div>
