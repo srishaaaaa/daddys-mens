@@ -77,6 +77,16 @@ const WaIcon = ({ size = 15 }: { size?: number }) => <MessageCircle width={size}
 // Kept while the app is open, so the tab shows straight away and refreshes quietly.
 let couponsCache: Coupon[] | null = null;
 
+/** Loads the coupons ahead of time (after sign-in) so the tab opens instantly. */
+export async function prefetchCoupons() {
+  if (couponsCache) return;
+  try {
+    couponsCache = await listCouponsAction();
+  } catch {
+    /* the tab shows the error itself if it still fails when opened */
+  }
+}
+
 export default function CouponsPanel() {
   const [coupons, setCoupons] = useState<Coupon[]>(couponsCache ?? []);
   const [loading, setLoading] = useState(!couponsCache);
@@ -394,11 +404,19 @@ export default function CouponsPanel() {
               />
             </div>
             {!list.length ? (
-              <div className="rounded-2xl border border-dashed border-black/15 px-6 py-10 text-center">
-                <Ticket className="mx-auto mb-2 w-6 h-6 text-slate-400" />
-                <p className="text-sm font-bold text-slate-800">{coupons.length ? "No coupons match" : loading ? "Loading…" : "No coupons yet"}</p>
-                {!coupons.length && !loading && <p className="mt-1 text-xs text-slate-500">Create one — staff can use it straight away.</p>}
-              </div>
+              loading && !coupons.length ? (
+                <div className="animate-pulse space-y-4" aria-label="Loading coupons">
+                  {[0, 1, 2].map((i) => (
+                    <div key={i} className="h-28 rounded-2xl border border-slate-100 bg-slate-50" />
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-black/15 px-6 py-10 text-center">
+                  <Ticket className="mx-auto mb-2 w-6 h-6 text-slate-400" />
+                  <p className="text-sm font-bold text-slate-800">{coupons.length ? "No coupons match" : "No coupons yet"}</p>
+                  {!coupons.length && <p className="mt-1 text-xs text-slate-500">Create one — staff can use it straight away.</p>}
+                </div>
+              )
             ) : (
               <ul className="-mr-2 max-h-[560px] space-y-4 overflow-y-auto pr-2">
                 {list.map((c) => {
@@ -661,7 +679,11 @@ function BlastCoupon({ coupon: c, onClose, onSent }: { coupon: Coupon; onClose: 
         </div>
         <div className="flex-1 overflow-y-auto border-t border-black/5 px-5 pb-5">
           {people === null ? (
-            <p className="py-10 text-center text-[13px] text-slate-400">Loading…</p>
+            <div className="animate-pulse space-y-3 py-4" aria-label="Loading">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <div key={i} className="h-10 rounded-lg bg-black/5" />
+              ))}
+            </div>
           ) : list.length === 0 ? (
             <p className="py-10 text-center text-[13px] text-slate-500">{people.length ? "No one matches." : "No customers to send to yet."}</p>
           ) : (

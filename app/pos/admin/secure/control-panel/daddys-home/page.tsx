@@ -48,6 +48,10 @@ import InstallAppButton from "@/app/install-app-button";
 import InventoryPanel from "./InventoryPanel";
 import CouponsPanel from "./CouponsPanel";
 import LoyaltyPanel, { prefetchLoyalty } from "./LoyaltyPanel";
+import { prefetchInventory } from "./InventoryPanel";
+import { prefetchCoupons } from "./CouponsPanel";
+import { prefetchExpenses } from "./ExpensesPanel";
+import { prefetchSettings } from "./SettingsPanel";
 import ExpensesPanel from "./ExpensesPanel";
 import { listExpensesAction } from "@/app/pos/expense-actions";
 import SettingsPanel from "./SettingsPanel";
@@ -459,7 +463,15 @@ export default function POSBilling() {
   const [gstPercentage, setGstPercentage] = useState<number>(5);
   const [gstInclusive, setGstInclusive] = useState<boolean>(false);
 
-  const [catalog, setCatalog] = useState<CatalogItem[]>([]);
+  // The item list is remembered on this device, so the picker has items the moment the page opens.
+  const [catalog, setCatalog] = useState<CatalogItem[]>(() => {
+    try {
+      const raw = typeof window !== "undefined" ? localStorage.getItem("pos_catalog_cache") : null;
+      return raw ? (JSON.parse(raw) as CatalogItem[]) : [];
+    } catch {
+      return [];
+    }
+  });
   // Distinguishes "still loading" from "genuinely empty", so the picker never
   // flashes a misleading `No items match ""` before the fetch lands.
   const [isCatalogLoading, setIsCatalogLoading] = useState(true);
@@ -556,18 +568,27 @@ export default function POSBilling() {
     setIsRefreshing(true);
     try {
       const productsData = await listProductsAction();
-      setCatalog(
-        productsData.map((p) => ({
-          id: p.id,
-          name: p.name,
-          desc: p.description,
-          imageUrl: p.image_url ?? null,
-          price: p.default_price || undefined,
-        })),
-      );
+      const freshCatalog = productsData.map((p) => ({
+        id: p.id,
+        name: p.name,
+        desc: p.description,
+        imageUrl: p.image_url ?? null,
+        price: p.default_price || undefined,
+      }));
+      setCatalog(freshCatalog);
+      try {
+        localStorage.setItem("pos_catalog_cache", JSON.stringify(freshCatalog));
+      } catch {
+        /* storage full or blocked: the list just loads fresh next time */
+      }
 
       getUpiConfigAction().then(setUpiCfg).catch(() => {});
-      void prefetchLoyalty(); // so the Loyalty tab opens instantly
+      // Warm the other tabs in the background so they open instantly (these quietly do nothing for staff).
+      void prefetchLoyalty();
+      void prefetchInventory();
+      void prefetchCoupons();
+      void prefetchExpenses();
+      void prefetchSettings();
       getShopProfileAction().then((p) => setShopProfile({ shopName: p.shopName, phone: p.phone })).catch(() => {});
       listBillOffersAction().then(setBillOffers).catch(() => {});
       listExpensesAction()
@@ -2578,10 +2599,11 @@ export default function POSBilling() {
                                     <div className="px-4 py-4 text-center">
                                       <div className="text-xs text-[#000000] font-semibold mb-2 flex items-center justify-center gap-2">
                                         {isCatalogLoading ? (
-                                          <>
-                                            <Loader2 className="w-3.5 h-3.5 animate-spin text-[#C1272D]" />
-                                            Loading catalog…
-                                          </>
+                                          <div className="w-full animate-pulse space-y-2 py-1" aria-label="Loading items">
+                                            {[0, 1, 2].map((i) => (
+                                              <div key={i} className="h-8 rounded-lg bg-black/5" />
+                                            ))}
+                                          </div>
                                         ) : catalogSearch.trim() ? (
                                           `No items match "${catalogSearch}"`
                                         ) : (

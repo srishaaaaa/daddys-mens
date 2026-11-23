@@ -66,6 +66,9 @@ const formatWhen = (iso: string) =>
 
 const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
 
+// Kept while the app is open, so the ledger shows straight away and refreshes quietly.
+let movementsCache: StockMovement[] | null = null;
+
 export default function StockMovementsPanel({
   onExportSnapshot,
 }: {
@@ -77,7 +80,7 @@ export default function StockMovementsPanel({
     tick: number;
     rows: StockMovement[];
     error: string | null;
-  } | null>(null);
+  } | null>(movementsCache ? { tick: 0, rows: movementsCache, error: null } : null);
   const [period, setPeriod] = useState<Period>("all");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
@@ -88,6 +91,7 @@ export default function StockMovementsPanel({
     let cancelled = false;
     fetchStockMovements()
       .then((rows) => {
+        movementsCache = rows;
         if (!cancelled) setLoaded({ tick: reloadTick, rows, error: null });
       })
       .catch((err) => {
@@ -329,7 +333,11 @@ export default function StockMovementsPanel({
         {error ? (
           <div className="p-10 text-center text-xs font-bold text-[#B91C1C]">{error}</div>
         ) : loading && movements.length === 0 ? (
-          <div className="p-10 text-center text-xs font-semibold text-[#000000]/50">Loading movements…</div>
+          <div className="animate-pulse space-y-3 p-6" aria-label="Loading movements">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <div key={i} className="h-10 rounded-lg bg-black/5" />
+            ))}
+          </div>
         ) : ledger.length === 0 ? (
           <div className="p-12 text-center text-xs font-semibold text-[#000000]/50">
             {movements.length === 0

@@ -42,10 +42,22 @@ const inr = (n: number) => n.toLocaleString("en-IN", { minimumFractionDigits: 2,
 // Kept while the app is open, so the tab shows straight away and refreshes quietly.
 let expensesCache: { e: Expense[]; c: ExpenseCategory[] } | null = null;
 
+/** Loads the expenses ahead of time (after sign-in) so the tab opens instantly. */
+export async function prefetchExpenses() {
+  if (expensesCache) return;
+  try {
+    const [e, c] = await Promise.all([listExpensesAction(), listExpenseCategoriesAction()]);
+    expensesCache = { e, c };
+  } catch {
+    /* the tab shows the error itself if it still fails when opened */
+  }
+}
+
 export default function ExpensesPanel() {
   const [expenses, setExpenses] = useState<Expense[]>(expensesCache?.e ?? []);
   const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>(expensesCache?.c ?? []);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(!!expensesCache);
 
   const [expTitle, setExpTitle] = useState("");
   // "" = the first active category (derived below as expCategoryValue).
@@ -75,7 +87,9 @@ export default function ExpensesPanel() {
       setExpenses(e);
       setExpenseCategories(c);
       setLoadError(null);
+      setLoaded(true);
     } catch (err) {
+      setLoaded(true);
       console.error("Failed to load expenses:", err);
       setLoadError("Could not load expenses. Has migration 0006_expenses.sql been run in Supabase?");
     }
@@ -483,6 +497,12 @@ export default function ExpensesPanel() {
                 )}
               </div>
             </div>
+          ) : !loaded ? (
+            <div className="animate-pulse space-y-4 py-4" aria-label="Loading">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="h-6 rounded-lg bg-black/5" />
+              ))}
+            </div>
           ) : expenseStats.categoryBreakdown.length === 0 ? (
             <div className="py-12 text-center">
               <div className="w-14 h-14 rounded-full bg-[#6B5F52]/10 flex items-center justify-center mx-auto mb-4">
@@ -540,7 +560,13 @@ export default function ExpensesPanel() {
           </div>
         </div>
 
-        {expenseStats.filtered.length === 0 ? (
+        {!loaded ? (
+          <div className="animate-pulse space-y-3 p-6" aria-label="Loading">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="h-12 rounded-xl bg-black/5" />
+            ))}
+          </div>
+        ) : expenseStats.filtered.length === 0 ? (
           <div className="py-12 text-center">
             <div className="w-14 h-14 rounded-full bg-[#6B5F52]/10 flex items-center justify-center mx-auto mb-4">
               <Wallet className="w-7 h-7 text-[#6B5F52]" />

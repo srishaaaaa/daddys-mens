@@ -76,6 +76,17 @@ type NumField = number | "";
 // Kept while the app is open, so the tab shows straight away and refreshes quietly.
 let inventoryCache: { items: CatalogItem[]; cats: string[] } | null = null;
 
+/** Loads the inventory ahead of time (after sign-in) so the tab opens instantly. */
+export async function prefetchInventory() {
+  if (inventoryCache) return;
+  try {
+    const [items, cats] = await Promise.all([listInventoryAction(), listCategoriesAction()]);
+    inventoryCache = { items: items.map(toCatalogItem), cats };
+  } catch {
+    /* the tab shows the error itself if it still fails when opened */
+  }
+}
+
 export default function InventoryPanel() {
   const [inventoryView, setInventoryView] = useState<"products" | "movements">("products");
   const [catalog, setCatalog] = useState<CatalogItem[]>(inventoryCache?.items ?? []);
@@ -541,8 +552,12 @@ export default function InventoryPanel() {
               {loadError}
             </div>
           ) : loading ? (
-            <div className="bg-white border border-black/10 rounded-xl p-12 text-center text-xs font-semibold text-[#000000]/50">
-              Loading inventory…
+            <div className="bg-white border border-black/10 rounded-xl overflow-hidden">
+              <div className="animate-pulse space-y-3 p-6" aria-label="Loading">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="h-12 rounded-xl bg-black/5" />
+              ))}
+            </div>
             </div>
           ) : catalog.length === 0 ? (
             <div className="bg-white border border-black/10 rounded-xl p-12 text-center">

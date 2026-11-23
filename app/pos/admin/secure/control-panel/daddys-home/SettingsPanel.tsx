@@ -18,26 +18,42 @@ const cardCls = "rounded-3xl border border-black/10 bg-white p-5 shadow-sm sm:p-
 
 /* Shop settings: shop details shown to customers, the UPI details for the counter QR and WhatsApp payment
    link, the website address that links point at, and the admin / staff passcodes. */
+type SettingsData = { shopName: string; tagline: string; phone: string; email: string; address: string; upiId: string; upiName: string; upiPhone: string; upiQrMinutes: number; publicUrl: string };
+const toForm = (s: SettingsData): Form => ({
+  shopName: s.shopName, tagline: s.tagline, phone: s.phone, email: s.email, address: s.address,
+  upiId: s.upiId, upiName: s.upiName, upiPhone: s.upiPhone, upiQrMinutes: String(s.upiQrMinutes), publicUrl: s.publicUrl,
+});
+
+// Kept while the app is open, so the tab shows straight away and refreshes quietly.
+let settingsCache: SettingsData | null = null;
+
+/** Loads the settings ahead of time (after sign-in) so the tab opens instantly. */
+export async function prefetchSettings() {
+  if (settingsCache) return;
+  try {
+    settingsCache = await getShopSettingsAction();
+  } catch {
+    /* the tab shows the error itself if it still fails when opened */
+  }
+}
+
 export default function SettingsPanel() {
-  const [f, setF] = useState<Form>(EMPTY);
-  const [saved, setSaved] = useState<Form>(EMPTY);
-  const [loading, setLoading] = useState(true);
+  const [f, setF] = useState<Form>(settingsCache ? toForm(settingsCache) : EMPTY);
+  const [saved, setSaved] = useState<Form>(settingsCache ? toForm(settingsCache) : EMPTY);
+  const [loading, setLoading] = useState(!settingsCache);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
-
-  const toForm = (s: { shopName: string; tagline: string; phone: string; email: string; address: string; upiId: string; upiName: string; upiPhone: string; upiQrMinutes: number; publicUrl: string }): Form => ({
-    shopName: s.shopName, tagline: s.tagline, phone: s.phone, email: s.email, address: s.address,
-    upiId: s.upiId, upiName: s.upiName, upiPhone: s.upiPhone, upiQrMinutes: String(s.upiQrMinutes), publicUrl: s.publicUrl,
-  });
 
   useEffect(() => {
     let live = true;
     getShopSettingsAction()
       .then((s) => {
         if (!live) return;
-        setF(toForm(s));
+        settingsCache = s;
+        // keep what the user is already typing if the form was shown from the saved copy
         setSaved(toForm(s));
+        setF((cur) => (JSON.stringify(cur) === JSON.stringify(saved) || !settingsCache ? toForm(s) : cur));
       })
       .catch(() => live && setError("Could not load settings. Has the SQL in supabase/all_migrations.sql been run in Supabase?"))
       .finally(() => live && setLoading(false));
@@ -53,6 +69,7 @@ export default function SettingsPanel() {
     setError(null);
     try {
       const s = await saveShopSettingsAction({ ...f, upiQrMinutes: Number(f.upiQrMinutes) });
+      settingsCache = { shopName: s.shopName, tagline: s.tagline, phone: s.phone, email: s.email, address: s.address, upiId: s.upiId, upiName: s.upiName, upiPhone: s.upiPhone, upiQrMinutes: s.upiQrMinutes, publicUrl: s.publicUrl };
       setF(toForm(s));
       setSaved(toForm(s));
       setJustSaved(true);
@@ -107,7 +124,10 @@ export default function SettingsPanel() {
         {error && <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-bold text-red-700">{error}</div>}
 
         {loading ? (
-          <p className="py-16 text-center text-[13px] text-slate-400">Loading settings…</p>
+          <div className="animate-pulse grid gap-6 lg:grid-cols-2" aria-label="Loading settings">
+            <div className="h-[420px] rounded-3xl border border-black/10 bg-white" />
+            <div className="h-[420px] rounded-3xl border border-black/10 bg-white" />
+          </div>
         ) : (
           <div className="grid items-start gap-6 lg:grid-cols-2">
             {/* Left column */}

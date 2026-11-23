@@ -90,7 +90,7 @@ export default function LoyaltyPanel({ admin }: { admin: boolean }) {
           <div>
             <h2 className="text-[28px] font-black tracking-tight text-black">Loyalty</h2>
             <p className="mt-1 text-xs font-semibold text-black/60">
-              {d ? (d.config.enabled ? "Points, free gifts and rewards for your regular customers." : "The programme is switched off — turn it on in Settings.") : "Loading…"}
+              {d ? (d.config.enabled ? "Points, free gifts and rewards for your regular customers." : "The programme is switched off — turn it on in Settings.") : "Points, free gifts and rewards for your regular customers."}
             </p>
           </div>
           <Btn onClick={() => void reload()}>
