@@ -471,6 +471,12 @@ export async function orderLoyalty(orderId: string) {
 /* ---------------------------------------------------------------- phone suggestions (billing) */
 export type CustomerSuggestion = { phone: string; name: string; source: "loyalty" | "bill"; points: number | null };
 
+/** Every active loyalty member (phone, name, points), so billing can match typed digits instantly. */
+export async function listMemberPhones(): Promise<CustomerSuggestion[]> {
+  const { data } = await sb.from("loyalty_customers").select("phone, name, available, status").eq("status", "active").limit(5000);
+  return ((data ?? []) as any[]).filter((m) => m.phone).map((m) => ({ phone: m.phone as string, name: (m.name ?? "") as string, source: "loyalty" as const, points: num(m.available) }));
+}
+
 /** Numbers that start with (or contain) what was typed, from loyalty members and earlier bills. */
 export async function suggestCustomers(q: string): Promise<CustomerSuggestion[]> {
   const digits = String(q ?? "").replace(/\D/g, "").slice(0, 10);

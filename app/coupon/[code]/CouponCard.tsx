@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Check, Copy, Download } from "lucide-react";
-import { drawCouponCanvas } from "@/lib/couponImage";
+import { canvasToPdf, drawCouponCanvas } from "@/lib/couponImage";
 
 type PublicCoupon = {
   code: string;
@@ -48,15 +48,17 @@ export default function CouponCard({ coupon: c, customerName, shop }: { coupon: 
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Draws the coupon onto a canvas and downloads it as a PNG.
-  const saveImage = async () => {
+  // Draws the coupon onto a canvas, wraps it in a one-page PDF and downloads it.
+  const savePdf = async () => {
     const cv = await drawCouponCanvas({ code: c.code, percent: c.percent, minOrder: c.minOrder, expiresAt: c.expiresAt, customerName, shopName: shop.name, tagline: shop.tagline, phone: shop.phone });
+    const url = URL.createObjectURL(canvasToPdf(cv));
     const a = document.createElement("a");
-    a.href = cv.toDataURL("image/png");
-    a.download = `coupon-${c.code}.png`;
+    a.href = url;
+    a.download = `coupon-${c.code}.pdf`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
   };
 
   const dead = c.status !== "active";
@@ -123,10 +125,10 @@ export default function CouponCard({ coupon: c, customerName, shop }: { coupon: 
           Call the store
         </a>}
         <button
-          onClick={saveImage}
+          onClick={savePdf}
           className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 py-2.5 text-[14px] font-bold text-white hover:bg-white/10 transition cursor-pointer"
         >
-          <Download className="w-4 h-4" /> Save coupon as image
+          <Download className="w-4 h-4" /> Save coupon as PDF
         </button>
         <p className="mt-2 text-center text-[11px] text-[#E7D9C3]/80">
           Show this code at the store or enter it at checkout.{shop.phone ? ` · ${shop.phone}` : ""}

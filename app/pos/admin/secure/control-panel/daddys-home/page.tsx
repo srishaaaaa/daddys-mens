@@ -710,6 +710,7 @@ export default function POSBilling() {
 
       if (boot.upi) setUpiCfg(boot.upi);
       if (boot.settings) seedSettings(boot.settings);
+      if (boot.members) setMemberPhones(boot.members);
       // Warm the other tabs in the background so they open instantly (these quietly do nothing for staff).
       void prefetchLoyalty();
       void prefetchInventory();
@@ -1300,6 +1301,8 @@ export default function POSBilling() {
   const [showPhoneSuggestions, setShowPhoneSuggestions] = useState(false);
   const [suggestIndex, setSuggestIndex] = useState(-1);
   const phoneTypedRef = useRef(false); // only suggest while the user is typing, not after a pick
+  // Loyalty members, loaded once at start; with the bills already on the page this lets numbers match instantly.
+  const [memberPhones, setMemberPhones] = useState<{ phone: string; name: string; source: "loyalty" | "bill"; points: number | null }[] | null>(null);
 
   useEffect(() => {
     if (!phoneTypedRef.current || customerPhone.length < 2 || customerPhone.length >= 10) {
@@ -1307,21 +1310,42 @@ export default function POSBilling() {
       setPhoneSuggestions([]);
       return;
     }
+    const q = customerPhone;
+    // Instant, in the browser: every loyalty member and every earlier bill whose number contains what was typed.
+    const pool = new Map<string, { phone: string; name: string; source: "loyalty" | "bill"; points: number | null }>();
+    for (const m of memberPhones ?? []) if (m.phone.includes(q)) pool.set(m.phone, m);
+    for (const o of orders) {
+      const ph = (o.customerPhone || "").replace(/\D/g, "").slice(-10);
+      if (ph.length !== 10 || !ph.includes(q)) continue;
+      const name = o.customerName && o.customerName !== "Guest" ? o.customerName : "";
+      const ex = pool.get(ph);
+      if (ex) { if (!ex.name && name) pool.set(ph, { ...ex, name }); continue; }
+      pool.set(ph, { phone: ph, name, source: "bill", points: null });
+    }
+    const local = [...pool.values()]
+      .sort((a, b) => Number(b.phone.startsWith(q)) - Number(a.phone.startsWith(q)) || a.phone.localeCompare(b.phone))
+      .slice(0, 30);
+    if (memberPhones || local.length) {
+      setPhoneSuggestions(local);
+      setSuggestIndex(-1);
+      return;
+    }
+    // Members not loaded yet and nothing on this page matches: ask the server.
     let live = true;
     const t = setTimeout(() => {
-      suggestCustomersAction(customerPhone)
+      suggestCustomersAction(q)
         .then((r) => {
           if (!live) return;
           setPhoneSuggestions(r);
           setSuggestIndex(-1);
         })
         .catch(() => live && setPhoneSuggestions([]));
-    }, 180);
+    }, 120);
     return () => {
       live = false;
       clearTimeout(t);
     };
-  }, [customerPhone]);
+  }, [customerPhone, memberPhones, orders]);
 
   const pickSuggestion = (s: { phone: string; name: string }) => {
     phoneTypedRef.current = false;
@@ -2201,7 +2225,7 @@ export default function POSBilling() {
         className={`fixed lg:sticky top-0 bottom-0 left-0 z-40 h-dvh shrink-0 overflow-hidden bg-[#0F0F0F] text-[#FFFFFF] flex flex-col justify-between shadow-xl w-64 border-r border-white/10 lg:transition-all lg:duration-300 lg:ease-in-out ${isSidebarOpen ? "translate-x-0 lg:w-64" : "-translate-x-full lg:w-0 lg:border-r-0 lg:translate-x-0"}`}
       >
         <div className="w-64 flex flex-col justify-between h-full shrink-0 overflow-hidden relative">
-          <div className="flex flex-col flex-1 min-h-0 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="flex flex-col flex-1 min-h-0 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch] [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,.25)_transparent]">
             {/* Header branding */}
             <div className="p-6 border-b border-white/10 flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
@@ -2339,7 +2363,7 @@ export default function POSBilling() {
           </div>
 
           {/* Footer branding */}
-          <div className="p-4 shrink-0 border-t border-white/10 bg-[#0F0F0F] flex items-center justify-start gap-4">
+          <div className="px-4 py-2.5 shrink-0 border-t border-white/10 bg-[#0F0F0F] flex items-center justify-start gap-4">
             <div className="w-8 h-8 rounded-full border border-white/20 flex items-center justify-center bg-[#C1272D] shrink-0">
               <span className="text-white font-bold text-sm">U</span>
             </div>
@@ -2481,14 +2505,18 @@ export default function POSBilling() {
                                 >
                                   <span className="min-w-0">
                                     <span className="block text-sm font-bold text-black tracking-wide">
-                                      {s.phone.slice(0, customerPhone.length) === customerPhone ? (
-                                        <>
-                                          <span className="text-[#C1272D]">{customerPhone}</span>
-                                          {s.phone.slice(customerPhone.length)}
-                                        </>
-                                      ) : (
-                                        s.phone
-                                      )}
+                                      {(() => {
+                                        const at = s.phone.indexOf(customerPhone);
+                                        return at < 0 || !customerPhone ? (
+                                          s.phone
+                                        ) : (
+                                          <>
+                                            {s.phone.slice(0, at)}
+                                            <span className="text-[#C1272D]">{customerPhone}</span>
+                                            {s.phone.slice(at + customerPhone.length)}
+                                          </>
+                                        );
+                                      })()}
                                     </span>
                                     <span className="block text-[11px] font-semibold text-black/60 truncate">
                                       {s.name || "No name saved"}

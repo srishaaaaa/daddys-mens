@@ -3,7 +3,7 @@
 import { listProductsAction, listOrdersAction } from "./actions";
 import { getUpiConfigAction } from "./pay-actions";
 import { getShopProfileAction, getShopSettingsAction } from "./settings-actions";
-import { listBillOffersAction } from "./loyalty-actions";
+import { listBillOffersAction, memberPhonesAction } from "./loyalty-actions";
 import { listExpensesAction } from "./expense-actions";
 import { listCouponsAction } from "./coupon-actions";
 
@@ -13,7 +13,7 @@ import { listCouponsAction } from "./coupon-actions";
 const soft = <T,>(p: Promise<T>) => p.then((v) => v, () => null);
 
 export async function bootstrapAction() {
-  const [products, orders, upi, profile, offers, expenses, coupons, settings] = await Promise.all([
+  const [products, orders, upi, profile, offers, expenses, coupons, settings, members] = await Promise.all([
     listProductsAction(),
     listOrdersAction(),
     soft(getUpiConfigAction()),
@@ -22,6 +22,7 @@ export async function bootstrapAction() {
     soft(listExpensesAction()),
     soft(listCouponsAction()),
     soft(getShopSettingsAction()),
+    soft(memberPhonesAction()),
   ]);
-  return { products, orders, upi, profile, offers, expenses, coupons, settings };
+  return { products, orders, upi, profile, offers, expenses, coupons, settings, members };
 }

@@ -33,8 +33,6 @@ export function PayClient({
     <div className="flex min-h-screen flex-col items-center justify-center bg-[#F5EFE6] px-4 py-10 text-slate-900">
       <div className="w-full max-w-sm overflow-hidden rounded-3xl bg-white shadow-xl">
         <div className="bg-gradient-to-br from-[#C1272D] to-[#8E1B20] p-6 text-center text-white">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.png" alt="" style={{ height: 44, width: "auto", margin: "0 auto 10px", objectFit: "contain" }} />
           <p className="text-[12px] font-extrabold uppercase tracking-[0.2em] text-[#F3D8A0]">{shop}</p>
           <p className="mt-1 text-[14px] text-[#FBE9E9]">{name ? `Hi ${name.split(" ")[0]}, your bill` : "Your bill"}</p>
           <p className="mt-1 text-[44px] font-black leading-none">{rupee(amount)}</p>

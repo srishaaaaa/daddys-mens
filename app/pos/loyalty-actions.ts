@@ -88,6 +88,10 @@ export async function recordOffersGivenAction(given: { offerId: string; qty: num
   await requireStaff();
   return L.recordOffersGiven(given);
 }
+export async function memberPhonesAction() {
+  await requireStaff();
+  return L.listMemberPhones();
+}
 export async function suggestCustomersAction(q: string) {
   await requireStaff();
   return L.suggestCustomers(q);
