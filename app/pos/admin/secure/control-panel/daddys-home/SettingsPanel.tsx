@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, Globe, KeyRound, Loader2, QrCode, Save, Store } from "lucide-react";
+import { CheckCircle2, KeyRound, Loader2, QrCode, Save, Store } from "lucide-react";
 import { UpiQrCard } from "@/app/_components/UpiQrCard";
 import { changePasscodeAction, getShopSettingsAction, saveShopSettingsAction } from "@/app/pos/settings-actions";
 import { unwrap } from "@/lib/actionResult";
@@ -96,7 +96,6 @@ export default function SettingsPanel() {
       {hint && <span className="mt-1 block text-[11.5px] text-slate-500">{hint}</span>}
     </label>
   );
-  const base = (f.publicUrl.trim() || "https://yourshop.vercel.app").replace(/\/$/, "");
 
   return (
     <div className="mx-auto w-full max-w-[1400px] flex-1 pb-8 pr-2 animate-in fade-in duration-300">
@@ -183,19 +182,6 @@ export default function SettingsPanel() {
                 </div>
               </section>
 
-              <section className={`${cardCls} space-y-5`}>
-                <h3 className="flex items-center gap-2 text-[18px] font-bold text-slate-900">
-                  <Globe className="h-5 w-5 text-[#C1272D]" /> Website address
-                </h3>
-                {input("Public website address", <input className={field} value={f.publicUrl} placeholder="https://yourshop.vercel.app" onChange={(e) => setF({ ...f, publicUrl: e.target.value })} />,
-                  "Payment links and coupon links sent on WhatsApp open this address. It must be the public (https) address, not localhost.")}
-                <div className="rounded-xl bg-[#F6F3E9] px-4 py-3 text-[12px] text-slate-600">
-                  <p className="font-bold text-slate-800">Links customers receive</p>
-                  <p className="mt-1 break-all">Coupon: {base}/coupon/CODE</p>
-                  <p className="break-all">Payment: {base}/pay/…</p>
-                  <p className="break-all">Invoice: {base}/invoice/INV-…</p>
-                </div>
-              </section>
             </div>
           </div>
         )}

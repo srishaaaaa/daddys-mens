@@ -49,8 +49,6 @@ type CatalogItem = {
   costPrice?: number;
   stock?: number | null;
   lowStockAlert?: number | null;
-  offerPct?: number;
-  offerPrice?: number | null;
   isActive?: boolean;
   imageUrl?: string | null;
 };
@@ -65,8 +63,6 @@ const toCatalogItem = (p: InventoryItem): CatalogItem => ({
   costPrice: p.cost_price,
   stock: p.current_stock,
   lowStockAlert: p.low_stock_alert,
-  offerPct: p.offer_discount_pct,
-  offerPrice: p.offer_price,
   isActive: p.is_active,
   imageUrl: p.image_url,
 });
@@ -140,8 +136,6 @@ export default function InventoryPanel() {
   const [newCatType, setNewCatType] = useState<ItemType>("PRODUCT");
   const [newCatStock, setNewCatStock] = useState<NumField>(0);
   const [newCatLowStock, setNewCatLowStock] = useState<NumField>(0);
-  const [newCatOfferPct, setNewCatOfferPct] = useState<NumField>("");
-  const [newCatOfferPrice, setNewCatOfferPrice] = useState<NumField>("");
   const [newCatActive, setNewCatActive] = useState(true);
   const [newCatImage, setNewCatImage] = useState<string | null>(null);
 
@@ -154,8 +148,6 @@ export default function InventoryPanel() {
     setNewCatType("PRODUCT");
     setNewCatStock(0);
     setNewCatLowStock(0);
-    setNewCatOfferPct("");
-    setNewCatOfferPrice("");
     setNewCatActive(true);
     setNewCatImage(null);
   };
@@ -170,8 +162,6 @@ export default function InventoryPanel() {
     setNewCatCost(catItem.costPrice ?? "");
     setNewCatStock(catItem.stock ?? 0);
     setNewCatLowStock(catItem.lowStockAlert ?? 0);
-    setNewCatOfferPct(catItem.offerPct && catItem.offerPct > 0 ? catItem.offerPct : "");
-    setNewCatOfferPrice(catItem.offerPrice ?? "");
     setNewCatActive(catItem.isActive === undefined ? true : catItem.isActive);
     setNewCatImage(catItem.imageUrl ?? null);
     setShowCatalogModal(true);
@@ -190,13 +180,6 @@ export default function InventoryPanel() {
     setShowCatalogModal(false);
   };
 
-  // Offer price preview: derived from the price + % until the user overrides it.
-  const computedOfferPrice = useMemo(() => {
-    const pct = Number(newCatOfferPct) || 0;
-    const base = Number(newCatPrice) || 0;
-    if (pct <= 0) return 0;
-    return Math.round((base - (base * pct) / 100) * 100) / 100;
-  }, [newCatOfferPct, newCatPrice]);
 
   const addToCatalog = async () => {
     if (!newCatName.trim()) {
@@ -207,24 +190,6 @@ export default function InventoryPanel() {
     const priceNum = Number(newCatPrice);
     if (priceNum > 99999999.99) {
       alert("The price exceeds the maximum allowable system limit of ₹99,999,999.99.");
-      return;
-    }
-
-    // An offer needs a % or a fixed offer price below the original price;
-    // whichever is missing is derived from the other.
-    const typedOfferPrice = newCatOfferPrice === "" ? 0 : Number(newCatOfferPrice);
-    let offerPct = Number(newCatOfferPct) || 0;
-    if (offerPct <= 0 && typedOfferPrice > 0 && priceNum > 0 && typedOfferPrice < priceNum) {
-      offerPct = Math.round((1 - typedOfferPrice / priceNum) * 10000) / 100;
-    }
-    const offerPrice =
-      offerPct > 0
-        ? typedOfferPrice > 0
-          ? typedOfferPrice
-          : Math.round((priceNum - (priceNum * offerPct) / 100) * 100) / 100
-        : null;
-    if (offerPrice !== null && offerPrice >= priceNum) {
-      alert("The offer price must be lower than the original price.");
       return;
     }
 
@@ -239,8 +204,8 @@ export default function InventoryPanel() {
       // Services never carry stock.
       current_stock: isService ? null : newCatStock === "" ? 0 : Number(newCatStock),
       low_stock_alert: isService ? null : newCatLowStock === "" ? 0 : Number(newCatLowStock),
-      offer_discount_pct: offerPct,
-      offer_price: offerPrice,
+      offer_discount_pct: 0,
+      offer_price: null,
       is_active: newCatActive,
       image_url: newCatImage,
     };
@@ -433,7 +398,7 @@ export default function InventoryPanel() {
     }
     const headers = [
       "Product ID", "Name", "Type", "Description", "Category", "Price", "Cost Price",
-      "Stock", "Low Stock Alert", "Offer %", "Offer Price", "Active",
+      "Stock", "Low Stock Alert", "Active",
     ];
     const rows = catalog.map((p) => [
       p.id,
@@ -446,8 +411,6 @@ export default function InventoryPanel() {
       // Services have no stock by design.
       p.itemType === "SERVICE" ? "" : (p.stock ?? ""),
       p.itemType === "SERVICE" ? "" : (p.lowStockAlert ?? ""),
-      p.offerPct ?? 0,
-      p.offerPrice ?? "",
       p.isActive === false ? "No" : "Yes",
     ]);
     const csv = [headers, ...rows]
@@ -675,11 +638,7 @@ export default function InventoryPanel() {
                             </td>
                             <td className="p-3 text-right text-sm font-black text-[#000000]">
                               ₹{rupees(p.price ?? 0)}
-                              {(p.offerPct ?? 0) > 0 && (
-                                <div className="text-[9px] font-bold uppercase tracking-wider text-[#15803D]">
-                                  −{p.offerPct}% → ₹{rupees(p.offerPrice ?? 0)}
-                                </div>
-                              )}
+                              
                             </td>
                             <td className="p-3 text-right">
                               <div className="flex justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
@@ -1373,48 +1332,6 @@ export default function InventoryPanel() {
               <p className="text-[9px] text-gray-400 font-semibold -mt-2">
                 Cost price is for your records only — it is never used in billing.
               </p>
-
-              <div className="border border-amber-200 bg-amber-50/60 rounded-xl p-3.5 space-y-3">
-                <p className="text-[10px] font-bold text-amber-800 uppercase tracking-widest flex items-center gap-1.5">
-                  <Tag className="w-3.5 h-3.5" />
-                  {newCatType === "SERVICE" ? "Service Offer" : "Product Special Offer"} (Automatic on Billing)
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[10px] font-bold text-amber-900/70 uppercase tracking-widest mb-1.5">
-                      Offer Discount (%)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      placeholder="e.g. 10"
-                      className="w-full bg-white border border-amber-200 focus:border-amber-400 rounded-lg px-3.5 py-2.5 text-sm font-bold text-black focus:outline-none transition-colors"
-                      value={newCatOfferPct}
-                      onWheel={(e) => e.currentTarget.blur()}
-                      onChange={(e) => setNewCatOfferPct(e.target.value === "" ? "" : parseFloat(e.target.value))}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-amber-900/70 uppercase tracking-widest mb-1.5">
-                      Discounted Offer Price (₹)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder={Number(newCatOfferPct) > 0 ? String(computedOfferPrice) : "Offer Price"}
-                      className="w-full bg-white border border-amber-200 focus:border-amber-400 rounded-lg px-3.5 py-2.5 text-sm font-bold text-black focus:outline-none transition-colors"
-                      value={newCatOfferPrice}
-                      onWheel={(e) => e.currentTarget.blur()}
-                      onChange={(e) => setNewCatOfferPrice(e.target.value === "" ? "" : parseFloat(e.target.value))}
-                    />
-                  </div>
-                </div>
-                <p className="text-[9px] text-amber-800/80 font-semibold">
-                  Whenever this {newCatType === "SERVICE" ? "service" : "product"} is added to a bill, the offer price is
-                  applied automatically and shown on the invoice.
-                </p>
-              </div>
 
               <button
                 type="button"
