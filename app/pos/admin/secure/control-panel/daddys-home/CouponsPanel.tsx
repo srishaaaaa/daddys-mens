@@ -25,6 +25,11 @@ import {
   saveCouponAction,
   sendCouponAction,
 } from "@/app/pos/coupon-actions";
+import { unwrap } from "@/lib/actionResult";
+
+// These report problems as results; unwrap turns them back into errors that carry the real message.
+const saveCoupon = (...a: Parameters<typeof saveCouponAction>) => unwrap(saveCouponAction(...a));
+
 
 type Form = {
   id?: string;
@@ -123,7 +128,7 @@ export default function CouponsPanel() {
     e.preventDefault();
     setBusy(true);
     try {
-      const saved = await saveCouponAction({
+      const saved = await saveCoupon({
         id: f.id,
         code: f.code,
         percent: Number(f.percent),
@@ -173,7 +178,7 @@ export default function CouponsPanel() {
 
   const togglePause = async (c: Coupon) => {
     try {
-      await saveCouponAction({
+      await saveCoupon({
         id: c.id,
         code: c.code,
         percent: c.percent,

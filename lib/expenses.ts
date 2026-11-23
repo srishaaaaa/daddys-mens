@@ -24,7 +24,9 @@ export type ExpenseInput = {
 const MODES = ["CASH", "UPI", "CARD", "BANK", "OTHER"];
 const map = (r: any): Expense => ({
   id: r.id, title: r.title, category: r.category, amount: Number(r.amount) || 0,
-  payment_mode: r.payment_mode, notes: r.notes ?? null, expense_date: r.expense_date, created_at: r.created_at,
+  payment_mode: r.payment_mode, notes: r.notes ?? null,
+  expense_date: r.expense_date instanceof Date ? r.expense_date.toISOString().slice(0, 10) : String(r.expense_date).slice(0, 10),
+  created_at: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
 });
 
 function clean(i: ExpenseInput) {

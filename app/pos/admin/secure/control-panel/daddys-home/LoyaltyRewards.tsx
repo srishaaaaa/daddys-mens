@@ -8,6 +8,12 @@ import {
   loyaltyOfferDeleteAction, loyaltyOfferSaveAction, loyaltyRewardDeleteAction, loyaltyRewardSaveAction,
 } from "@/app/pos/loyalty-actions";
 import { Btn, ExcelBtn, Modal, Switch, card, cx, downloadCsv, field, labelCls, rupee, useBusy } from "./loyaltyKit";
+import { unwrap } from "@/lib/actionResult";
+
+// These report problems as results; unwrap turns them back into errors that carry the real message.
+const saveReward = (...a: Parameters<typeof loyaltyRewardSaveAction>) => unwrap(loyaltyRewardSaveAction(...a));
+const saveOffer = (...a: Parameters<typeof loyaltyOfferSaveAction>) => unwrap(loyaltyOfferSaveAction(...a));
+
 
 type Prod = LoyaltyData["products"][number];
 
@@ -27,9 +33,9 @@ export default function LoyaltyRewards({ d, reload }: { d: LoyaltyData; reload: 
   const pointsGifts = d.rewards.filter((r) => r.trigger === "points");
   const spendGifts = d.rewards.filter((r) => r.trigger === "milestone");
 
-  const toggleReward = async (r: Reward) => { await loyaltyRewardSaveAction({ ...r, active: !r.active }); await reload(); };
+  const toggleReward = async (r: Reward) => { await saveReward({ ...r, active: !r.active }); await reload(); };
   const delReward = async (r: Reward) => { if (window.confirm(`Delete "${r.name}"? Gifts already unlocked stay on record.`)) { await loyaltyRewardDeleteAction(r.id); await reload(); } };
-  const toggleOffer = async (o: GiftOffer) => { await loyaltyOfferSaveAction({ ...o, active: !o.active }); await reload(); };
+  const toggleOffer = async (o: GiftOffer) => { await saveOffer({ ...o, active: !o.active }); await reload(); };
   const delOffer = async (o: GiftOffer) => { if (window.confirm(`Delete the offer "${o.name}"?`)) { await loyaltyOfferDeleteAction(o.id); await reload(); } };
 
   const excel = () =>
@@ -99,7 +105,7 @@ function RewardForm({ r, products, onClose, onSaved }: { r: Partial<Reward> & { 
   const isPts = r.trigger === "points";
   const save = async () => {
     const ok = await run(async () => {
-      await loyaltyRewardSaveAction({ ...r, name: f.name, productId: f.productId || null, pointsCost: Number(f.pointsCost) || 0, milestoneAmount: Number(f.milestoneAmount) || 0, giftQty: Number(f.giftQty) || 1, active: f.active, trigger: r.trigger });
+      await saveReward({ ...r, name: f.name, productId: f.productId || null, pointsCost: Number(f.pointsCost) || 0, milestoneAmount: Number(f.milestoneAmount) || 0, giftQty: Number(f.giftQty) || 1, active: f.active, trigger: r.trigger });
       return true;
     });
     if (ok) await onSaved();
@@ -129,7 +135,7 @@ function OfferForm({ o, products, onClose, onSaved }: { o: Partial<GiftOffer>; p
   const { busy, run } = useBusy();
   const save = async () => {
     const ok = await run(async () => {
-      await loyaltyOfferSaveAction({ ...o, name: f.name, type: f.type as "spend" | "buy", minBill: Number(f.minBill) || 0, productId: f.productId || null, buyQty: Number(f.buyQty) || 1, giftProductId: f.giftProductId, giftQty: Number(f.giftQty) || 1, repeatable: f.repeatable, audience: f.audience as "all" | "members", active: f.active });
+      await saveOffer({ ...o, name: f.name, type: f.type as "spend" | "buy", minBill: Number(f.minBill) || 0, productId: f.productId || null, buyQty: Number(f.buyQty) || 1, giftProductId: f.giftProductId, giftQty: Number(f.giftQty) || 1, repeatable: f.repeatable, audience: f.audience as "all" | "members", active: f.active });
       return true;
     });
     if (ok) await onSaved();

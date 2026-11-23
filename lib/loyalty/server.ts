@@ -320,7 +320,10 @@ export async function refreshUnlocks(c: LoyaltyCustomer, cfg: LoyaltyConfig) {
     }
     if (r.trigger === "milestone" && cfg.gifts.milestone && r.milestoneAmount > 0) {
       if (spent === null) {
-        const orders = (await allOrders()).filter((o) => o.phone === c.phone && o.status === "completed");
+        const { data: mine } = await sb.from("orders").select("id, customer_phone, grand_total, created_at, status").like("customer_phone", `${c.phone}%`);
+        const orders = (mine ?? [])
+          .filter((o: any) => o.status === "COMPLETED" && phoneOfOrder(o.customer_phone) === c.phone)
+          .map((o: any) => ({ id: o.id as string, total: num(o.grand_total), createdAt: ms(o.created_at) }));
         spent = orders.reduce((a, o) => a + o.total, 0);
         (c as any)._orders = orders;
       }
@@ -364,6 +367,8 @@ export async function lookupMember(phoneRaw: string): Promise<LoyaltyLookup & { 
   const { data } = await sb.from("loyalty_customers").select("*").eq("phone", phone).maybeSingle();
   if (!data) return empty;
   const customer = mapCustomer(data);
+  // Gifts the member has earned but that haven't been issued yet (e.g. the gift was created after they reached the points).
+  await refreshUnlocks(customer, config).catch((e) => console.error("unlock refresh failed:", e));
   const [{ data: vou }, { data: rew }, { data: off }] = await Promise.all([
     sb.from("loyalty_vouchers").select("*").eq("customer_id", customer.id).eq("status", "issued"),
     sb.from("loyalty_rewards").select("*"),
@@ -409,16 +414,6 @@ export async function settleOrder(s: SettleInput, actor: string): Promise<{ earn
   const subtotal = num((ord as any).subtotal);
   const discount = num((ord as any).discount_amount);
 
-  // points used (the discount already sits in the bill; here we just take the points)
-  let used = 0;
-  if (s.pointsUsed > 0) {
-    const pts = Math.min(Math.floor(s.pointsUsed), c.available);
-    if (pts > 0) {
-      const { error } = await sb.rpc("loyalty_apply", { p_customer: c.id, p_type: "redemption", p_points: -pts, p_order: s.orderId, p_desc: `Used on bill ${s.orderId}`, p_actor: actor });
-      if (error) console.error("redeem failed:", error.message); else used = pts;
-    }
-  }
-
   // free gifts handed over
   for (const vid of s.voucherIds ?? []) {
     const { data: v } = await sb.from("loyalty_vouchers").select("*").eq("id", vid).eq("customer_id", c.id).eq("status", "issued").maybeSingle();
@@ -431,6 +426,19 @@ export async function settleOrder(s: SettleInput, actor: string): Promise<{ earn
     await sb.from("loyalty_vouchers").update({ status: "used", data: { ...d, billId: s.orderId, invoiceNo: s.orderId, usedAt: Date.now() } }).eq("id", vid);
     c = { ...c };
     await prepareMessage(cfg, "claimed", c, { reward: d.name, quantity: d.giftQty }, s.orderId);
+  }
+
+  // points used (the discount already sits in the bill; here we just take the points).
+  // Gifts were claimed first, so only what is left of the balance can be used.
+  const { data: curRow } = await sb.from("loyalty_customers").select("available").eq("id", c.id).single();
+  const availableNow = num(curRow?.available);
+  let used = 0;
+  if (s.pointsUsed > 0) {
+    const pts = Math.min(Math.floor(s.pointsUsed), availableNow);
+    if (pts > 0) {
+      const { error } = await sb.rpc("loyalty_apply", { p_customer: c.id, p_type: "redemption", p_points: -pts, p_order: s.orderId, p_desc: `Used on bill ${s.orderId}`, p_actor: actor });
+      if (error) console.error("redeem failed:", error.message); else used = pts;
+    }
   }
 
   // points earned: on what was actually paid for eligible items, after every discount

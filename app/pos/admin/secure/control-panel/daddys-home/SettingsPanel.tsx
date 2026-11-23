@@ -4,6 +4,11 @@ import { useEffect, useState } from "react";
 import { CheckCircle2, Globe, KeyRound, Loader2, QrCode, Save, Store } from "lucide-react";
 import { UpiQrCard } from "@/app/_components/UpiQrCard";
 import { changePasscodeAction, getShopSettingsAction, saveShopSettingsAction } from "@/app/pos/settings-actions";
+import { unwrap } from "@/lib/actionResult";
+
+// These report problems as results; unwrap turns them back into errors that carry the real message.
+const saveShopSettings = (...a: Parameters<typeof saveShopSettingsAction>) => unwrap(saveShopSettingsAction(...a));
+
 
 type Form = {
   shopName: string; tagline: string; phone: string; email: string; address: string;
@@ -68,7 +73,7 @@ export default function SettingsPanel() {
     setSaving(true);
     setError(null);
     try {
-      const s = await saveShopSettingsAction({ ...f, upiQrMinutes: Number(f.upiQrMinutes) });
+      const s = await saveShopSettings({ ...f, upiQrMinutes: Number(f.upiQrMinutes) });
       settingsCache = { shopName: s.shopName, tagline: s.tagline, phone: s.phone, email: s.email, address: s.address, upiId: s.upiId, upiName: s.upiName, upiPhone: s.upiPhone, upiQrMinutes: s.upiQrMinutes, publicUrl: s.publicUrl };
       setF(toForm(s));
       setSaved(toForm(s));

@@ -2,6 +2,7 @@
 
 import { requireAdmin, requireStaff } from "@/lib/auth";
 import { passcodeMatches, setPasscode, type PasscodeRole } from "@/lib/passcodes";
+import { run } from "@/lib/actionResult";
 import { getShopProfile, getShopSettings, saveShopSettings, type ShopSettings } from "@/lib/shopSettings";
 
 export async function getShopSettingsAction() {
@@ -15,7 +16,7 @@ export async function getShopProfileAction() {
 }
 export async function saveShopSettingsAction(s: Partial<ShopSettings>) {
   await requireAdmin();
-  return saveShopSettings(s);
+  return run(() => saveShopSettings(s));
 }
 
 /** Change the admin or staff passcode. The current admin passcode must be entered again to confirm. */

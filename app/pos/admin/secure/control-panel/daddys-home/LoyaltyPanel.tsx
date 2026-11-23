@@ -16,6 +16,13 @@ import {
 } from "./loyaltyKit";
 import LoyaltyRewards from "./LoyaltyRewards";
 import LoyaltySettings from "./LoyaltySettings";
+import { unwrap } from "@/lib/actionResult";
+
+// These report problems as results; unwrap turns them back into errors that carry the real message.
+const updateCustomer = (...a: Parameters<typeof loyaltyUpdateAction>) => unwrap(loyaltyUpdateAction(...a));
+const registerCustomer = (...a: Parameters<typeof loyaltyRegisterAction>) => unwrap(loyaltyRegisterAction(...a));
+const adjustPoints = (...a: Parameters<typeof loyaltyAdjustAction>) => unwrap(loyaltyAdjustAction(...a));
+
 
 type Tab = "dashboard" | "customers" | "rewards" | "records" | "crm" | "settings";
 const EARN_TYPES = ["purchase", "bonus", "promo", "referral", "occasion", "refund_restore"];
@@ -205,10 +212,10 @@ function Dashboard({ s, onOpen, earned, redeemed }: { s: Shared; onOpen: (t: Tab
           ) : (
             <div className="flex h-48 items-end gap-4">
               {d.months.map((m) => (
-                <div key={m.month} className="flex flex-1 flex-col items-center gap-1">
-                  <div className="flex h-40 w-full items-end justify-center gap-1">
-                    <div title={`Earned ${m.earned}`} className="w-1/3 rounded-t bg-emerald-500" style={{ height: `${(m.earned / max) * 100}%` }} />
-                    <div title={`Redeemed ${m.redeemed}`} className="w-1/3 rounded-t bg-amber-500" style={{ height: `${(m.redeemed / max) * 100}%` }} />
+                <div key={m.month} className="flex min-w-0 max-w-[110px] flex-1 flex-col items-center gap-1">
+                  <div className="flex h-40 w-full items-end justify-center gap-1.5">
+                    <div title={`Earned ${m.earned}`} className="w-6 rounded-t bg-emerald-500" style={{ height: `${(m.earned / max) * 100}%` }} />
+                    <div title={`Redeemed ${m.redeemed}`} className="w-6 rounded-t bg-amber-500" style={{ height: `${(m.redeemed / max) * 100}%` }} />
                   </div>
                   <span className="text-[10px] font-semibold text-slate-500">{m.month}</span>
                 </div>
@@ -342,8 +349,8 @@ function CustomerForm({ d, c, onClose, onSaved }: { d: LoyaltyData; c?: LoyaltyC
   const { busy, run } = useBusy();
   const save = async () => {
     const ok = await run(async () => {
-      if (c) await loyaltyUpdateAction(c.id, f);
-      else await loyaltyRegisterAction(f);
+      if (c) await updateCustomer(c.id, f);
+      else await registerCustomer(f);
       return true;
     });
     if (ok) await onSaved();
@@ -383,7 +390,7 @@ function CustomerDetail({ c, s, admin, onClose }: { c: LoyaltyCustomer; s: Share
   const msgs = d.messages.filter((m) => m.customerId === c.id);
   const purchases = d.purchases[c.id] ?? [];
   const doAdjust = async () => {
-    const ok = await run(async () => { await loyaltyAdjustAction(c.id, Number(pts), reason); return true; });
+    const ok = await run(async () => { await adjustPoints(c.id, Number(pts), reason); return true; });
     if (ok) { setAdj(false); setPts(""); setReason(""); await reload(); }
   };
   return (

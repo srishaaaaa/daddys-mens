@@ -7,6 +7,11 @@ import { MESSAGE_FIELDS, MESSAGE_META, crmWarnings, rangeWarnings, rangesValid, 
 import { redeemRange } from "@/lib/loyalty/engine";
 import { loyaltyConfigAction } from "@/app/pos/loyalty-actions";
 import { Btn, ExcelBtn, Switch, card, cx, downloadCsv, fmtDateTime, useBusy } from "./loyaltyKit";
+import { unwrap } from "@/lib/actionResult";
+
+// These report problems as results; unwrap turns them back into errors that carry the real message.
+const saveConfig = (...a: Parameters<typeof loyaltyConfigAction>) => unwrap(loyaltyConfigAction(...a));
+
 
 const numIn = "h-10 w-28 rounded-lg border border-black/15 bg-white px-3 text-right text-sm font-bold outline-none focus:border-[#C1272D]";
 const Card = ({ title, sub, right, children }: { title: string; sub?: string; right?: React.ReactNode; children: React.ReactNode }) => (
@@ -32,7 +37,7 @@ export default function LoyaltySettings({ d, reload }: { d: LoyaltyData; reload:
   const n = (v: string) => (v === "" ? 0 : Number(v));
 
   const save = async () => {
-    const ok = await run(async () => { await loyaltyConfigAction(c, reason); return true; });
+    const ok = await run(async () => { await saveConfig(c, reason); return true; });
     if (ok) { setReason(""); await reload(); }
   };
 

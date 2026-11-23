@@ -4,6 +4,7 @@ import { requireAdmin, requireStaff } from "@/lib/auth";
 import * as L from "@/lib/loyalty/server";
 import type { CustomerInput, SettleInput } from "@/lib/loyalty/server";
 import type { GiftOffer, Reward } from "@/lib/loyalty/types";
+import { run } from "@/lib/actionResult";
 
 const actorOf = (role: string) => role;
 
@@ -19,15 +20,15 @@ export async function loyaltyLedgerAction(from?: number, to?: number) {
 }
 export async function loyaltyConfigAction(raw: unknown, reason: string) {
   const role = await requireAdmin();
-  return L.saveConfig(raw, reason, actorOf(role));
+  return run(() => L.saveConfig(raw, reason, actorOf(role)));
 }
 export async function loyaltyRegisterAction(input: CustomerInput) {
   const role = await requireStaff();
-  return L.registerCustomer(input, actorOf(role));
+  return run(() => L.registerCustomer(input, actorOf(role)));
 }
 export async function loyaltyUpdateAction(id: string, patch: Partial<CustomerInput>) {
   const role = await requireStaff();
-  return L.updateCustomer(id, patch, actorOf(role));
+  return run(() => L.updateCustomer(id, patch, actorOf(role)));
 }
 export async function loyaltyStatusAction(id: string, status: "active" | "inactive") {
   const role = await requireAdmin();
@@ -39,11 +40,11 @@ export async function loyaltyDeleteAction(id: string) {
 }
 export async function loyaltyAdjustAction(id: string, points: number, reason: string) {
   const role = await requireAdmin();
-  return L.adjustPoints(id, points, reason, actorOf(role));
+  return run(() => L.adjustPoints(id, points, reason, actorOf(role)));
 }
 export async function loyaltyRewardSaveAction(r: Partial<Reward> & { name: string }) {
   await requireAdmin();
-  return L.saveReward(r);
+  return run(() => L.saveReward(r));
 }
 export async function loyaltyRewardDeleteAction(id: string) {
   await requireAdmin();
@@ -51,7 +52,7 @@ export async function loyaltyRewardDeleteAction(id: string) {
 }
 export async function loyaltyOfferSaveAction(o: Partial<GiftOffer> & { name: string }) {
   await requireAdmin();
-  return L.saveOffer(o);
+  return run(() => L.saveOffer(o));
 }
 export async function loyaltyOfferDeleteAction(id: string) {
   await requireAdmin();

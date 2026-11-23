@@ -78,6 +78,11 @@ import {
   verifyPasscode,
   logoutAction,
 } from "@/app/pos/actions";
+import { unwrap } from "@/lib/actionResult";
+
+// These report problems as results; unwrap turns them back into errors that carry the real message.
+const registerLoyaltyCustomer = (...a: Parameters<typeof loyaltyRegisterAction>) => unwrap(loyaltyRegisterAction(...a));
+
 
 const UPI_CHANNELS = [
   { key: "counter_qr", label: "Counter QR" },
@@ -449,7 +454,7 @@ export default function POSBilling() {
     if (enrolling) return;
     setEnrolling(true);
     try {
-      await loyaltyRegisterAction({ phone: customerPhone, name: customerName });
+      await registerLoyaltyCustomer({ phone: customerPhone, name: customerName });
       await refreshMember(customerPhone);
     } catch (e) {
       alert(e instanceof Error ? e.message : "Could not add the customer.");
@@ -482,6 +487,13 @@ export default function POSBilling() {
   // Analytics filter/navigation states
   // Expense amounts and dates, for Net Profit on the dashboard (admin only; empty for staff).
   const [expenseRows, setExpenseRows] = useState<{ amount: number; date: string }[]>([]);
+  // Expenses added in the Expense Tracker show up in Net Profit as soon as Analytics is opened.
+  useEffect(() => {
+    if (activeTab !== "analytics") return;
+    listExpensesAction()
+      .then((rows) => setExpenseRows(rows.map((e) => ({ amount: e.amount, date: e.expense_date }))))
+      .catch(() => {});
+  }, [activeTab]);
   // All bills / GST invoices only / Non-GST bills only (narrows every analytics number).
   const [billTypeFilter, setBillTypeFilter] = useState<"all" | "gst" | "nongst">("all");
   const [analyticsPeriod, setAnalyticsPeriod] = useState<
@@ -890,6 +902,10 @@ export default function POSBilling() {
       ? subtotal * (discountValue / 100)
       : discountValue;
   // Loyalty: the cap comes from the shop's rules; the server re-checks everything when the bill is saved.
+  const memberAvailable = member?.customer?.available ?? 0;
+  const giftPointsReserved = member?.customer
+    ? member.vouchers.filter((v) => claimedVouchers.includes(v.id)).reduce((a, v) => a + (v.pointsCost || 0), 0)
+    : 0;
   const loyaltyCap = (() => {
     if (!member?.customer || !member.enabled) return null;
     const prods = member.products;
@@ -902,7 +918,8 @@ export default function POSBilling() {
       catOf: (id) => prods.find((p) => p.id === id)?.category ?? "",
       subtotal,
       remaining: Math.max(0, subtotal - manualDiscount),
-      available: member.customer.available,
+      // points set aside for free gifts already added to this bill can't also pay for a discount
+      available: member.customer.available - giftPointsReserved,
       couponApplied: selectedCoupon !== "none",
       manualApplied: selectedCoupon === "none" && discountValue > 0,
       rewardApplied: claimedVouchers.length > 0,
@@ -1010,6 +1027,12 @@ export default function POSBilling() {
         alert(`Split payment: the parts add up to ₹${(parts[0] + parts[1] + parts[2]).toFixed(2)} but the bill is ₹${grandTotal.toFixed(2)}.`);
         return null;
       }
+    }
+
+    // Points used plus points set aside for gifts can't be more than the member has.
+    if (member?.customer && loyaltyPoints + giftPointsReserved > member.customer.available) {
+      alert(`This bill uses ${loyaltyPoints + giftPointsReserved} loyalty points (discount + gifts) but ${member.customer.name || "the customer"} has only ${member.customer.available}.`);
+      return null;
     }
 
     // A free offer gift only stays if the bill still qualifies for it (the bill may have changed since it was added).
@@ -1519,6 +1542,7 @@ export default function POSBilling() {
   const gpayReceivedTotal = gpayOrdersList.reduce((a, o) => a + o.grandTotal, 0) + sumSplit("splitUpi");
   const cardReceivedTotal = cardOrdersList.reduce((a, o) => a + o.grandTotal, 0) + sumSplit("splitCard");
   const splitReceivedTotal = splitOrdersList.reduce((a, o) => a + o.grandTotal, 0);
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
   const inr2 = (n: number) => n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   // Top items by revenue in analyticsFilteredOrders
@@ -2306,7 +2330,7 @@ export default function POSBilling() {
               {/* Left Column */}
               <div className="w-full lg:w-[60%] xl:w-[65%] flex flex-col gap-6 h-auto lg:h-full">
                 {/* Customer Details */}
-                <div className="flex-shrink-0 bg-white border border-black/10 rounded-xl p-4 sm:p-6 shadow-sm hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] transition-all duration-300 relative overflow-hidden group">
+                <div className="flex-shrink-0 bg-white border border-black/10 rounded-xl p-4 sm:p-6 shadow-sm hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] transition-all duration-300 relative z-20 group">
                   <h2 className="text-base font-black flex items-center gap-3 text-[#000000] mb-6 tracking-tight">
                     <User className="w-4 h-4 text-[#C1272D]" />
                     Customer Details
@@ -2911,7 +2935,8 @@ export default function POSBilling() {
                                       </span>
                                       <button
                                         type="button"
-                                        disabled={added || !prod}
+                                        disabled={added || !prod || (v.pointsCost || 0) > memberAvailable - loyaltyPoints - giftPointsReserved}
+                                        title={(v.pointsCost || 0) > memberAvailable - loyaltyPoints - giftPointsReserved && !added ? "Not enough points left for this gift while points are used on the bill" : undefined}
                                         onClick={() => {
                                           if (!prod) return;
                                           setItems((prev) => [
@@ -3624,14 +3649,14 @@ export default function POSBilling() {
           <div className="flex-1 flex flex-col max-w-[1400px] min-w-0 mx-auto w-full pb-8 pr-2">
             {/* Header Panel */}
             <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
-              <div>
+              <div className="shrink-0">
                 <h2 className="text-[28px] font-black text-[#000000] tracking-tight">
                   Revenue Analytics
                 </h2>
                 <p className="text-xs text-[#000000] font-semibold mt-1">
                   {billTypeFilter === "gst" ? "GST invoices only" : billTypeFilter === "nongst" ? "Non-GST bills only" : "All bills"} — full store & channel insights
                 </p>
-                <div className="mt-4 inline-flex flex-wrap items-center bg-white border border-black/10 rounded-2xl p-1 gap-1">
+                <div className="mt-4 inline-flex flex-nowrap items-center whitespace-nowrap bg-white border border-black/10 rounded-2xl p-1 gap-1">
                   {([["all", "All Bills"], ["gst", "GST Invoices"], ["nongst", "Non-GST Bills"]] as const).map(([key, label]) => (
                     <button
                       key={key}
@@ -4092,11 +4117,11 @@ export default function POSBilling() {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-2">
-                  <AnalyticsCard label="Cash Received" tone="green" icon={<IndianRupee className="w-4 h-4" />} value={`₹${inr2(cashReceivedTotal)}`} sub={`${cashOrdersList.length + splitOrdersList.filter((o) => (o.splitCash ?? 0) > 0).length} bills`} />
-                  <AnalyticsCard label="GPay / UPI Received" icon={<IndianRupee className="w-4 h-4" />} value={`₹${inr2(gpayReceivedTotal)}`} sub={`${gpayOrdersList.length + splitOrdersList.filter((o) => (o.splitUpi ?? 0) > 0).length} bills`} />
+                  <AnalyticsCard label="Cash Received" tone="green" icon={<IndianRupee className="w-4 h-4" />} value={`₹${inr2(cashReceivedTotal)}`} sub={`${plural(cashOrdersList.length + splitOrdersList.filter((o) => (o.splitCash ?? 0) > 0).length, "bill")}`} />
+                  <AnalyticsCard label="GPay / UPI Received" icon={<IndianRupee className="w-4 h-4" />} value={`₹${inr2(gpayReceivedTotal)}`} sub={`${plural(gpayOrdersList.length + splitOrdersList.filter((o) => (o.splitUpi ?? 0) > 0).length, "bill")}`} />
                   <AnalyticsCard label="Split Received" tone="pink" icon={<IndianRupee className="w-4 h-4" />} value={`₹${inr2(splitReceivedTotal)}`}
                     sub={`${splitOrdersList.length} bill${splitOrdersList.length === 1 ? "" : "s"} - Cash ₹${inr2(sumSplit("splitCash"))} + UPI ₹${inr2(sumSplit("splitUpi"))}${sumSplit("splitCard") > 0 ? ` + Card ₹${inr2(sumSplit("splitCard"))}` : ""}`} />
-                  <AnalyticsCard label="Card Received" tone="violet" icon={<IndianRupee className="w-4 h-4" />} value={`₹${inr2(cardReceivedTotal)}`} sub={`${cardOrdersList.length + splitOrdersList.filter((o) => (o.splitCard ?? 0) > 0).length} bills`} />
+                  <AnalyticsCard label="Card Received" tone="violet" icon={<IndianRupee className="w-4 h-4" />} value={`₹${inr2(cardReceivedTotal)}`} sub={`${plural(cardOrdersList.length + splitOrdersList.filter((o) => (o.splitCard ?? 0) > 0).length, "bill")}`} />
                 </div>
                 <p className="mb-8 text-[11.5px] text-[#4A4038]">
                   Split bills are already included in the Cash, GPay / UPI and Card boxes (the Split box shows how much of them came from split payments).

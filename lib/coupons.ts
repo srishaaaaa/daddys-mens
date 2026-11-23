@@ -4,12 +4,19 @@ import { supabaseAdmin as sb } from "@/lib/supabase";
 import { couponStatus, type Coupon, type CouponInput } from "@/lib/couponTypes";
 export type { Coupon, CouponInput, CouponStatus } from "@/lib/couponTypes";
 
+/** A date column as yyyy-mm-dd, whether the driver hands back a string or a Date. */
+const dayOnly = (v: unknown): string | null => {
+  if (!v) return null;
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  return String(v).slice(0, 10);
+};
+
 const map = (r: any): Coupon => ({
   id: r.id,
   code: r.code,
   percent: Number(r.percent),
   minOrder: Number(r.min_order ?? 0),
-  expiresAt: r.expires_at ?? null,
+  expiresAt: dayOnly(r.expires_at),
   limit: r.usage_limit === null || r.usage_limit === undefined ? null : Number(r.usage_limit),
   used: Number(r.used ?? 0),
   active: r.active ?? true,

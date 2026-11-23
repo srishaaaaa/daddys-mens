@@ -3,6 +3,7 @@
 import { requireAdmin, requireStaff } from "@/lib/auth";
 import * as cp from "@/lib/coupons";
 import type { CouponInput } from "@/lib/coupons";
+import { run } from "@/lib/actionResult";
 
 export async function listCouponsAction() {
   await requireAdmin();
@@ -10,7 +11,7 @@ export async function listCouponsAction() {
 }
 export async function saveCouponAction(input: CouponInput) {
   await requireAdmin();
-  return cp.saveCoupon(input);
+  return run(() => cp.saveCoupon(input));
 }
 export async function deleteCouponAction(id: string) {
   await requireAdmin();
