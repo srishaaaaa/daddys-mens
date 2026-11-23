@@ -73,11 +73,14 @@ const toCatalogItem = (p: InventoryItem): CatalogItem => ({
 
 type NumField = number | "";
 
+// Kept while the app is open, so the tab shows straight away and refreshes quietly.
+let inventoryCache: { items: CatalogItem[]; cats: string[] } | null = null;
+
 export default function InventoryPanel() {
   const [inventoryView, setInventoryView] = useState<"products" | "movements">("products");
-  const [catalog, setCatalog] = useState<CatalogItem[]>([]);
-  const [categories, setCategories] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [catalog, setCatalog] = useState<CatalogItem[]>(inventoryCache?.items ?? []);
+  const [categories, setCategories] = useState<string[]>(inventoryCache?.cats ?? []);
+  const [loading, setLoading] = useState(!inventoryCache);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [inventorySearch, setInventorySearch] = useState("");
   const [expandedProductId, setExpandedProductId] = useState<string | null>(null);
@@ -85,7 +88,9 @@ export default function InventoryPanel() {
   const fetchData = useCallback(async () => {
     try {
       const [items, cats] = await Promise.all([listInventoryAction(), listCategoriesAction()]);
-      setCatalog(items.map(toCatalogItem));
+      const mapped = items.map(toCatalogItem);
+      inventoryCache = { items: mapped, cats };
+      setCatalog(mapped);
       setCategories(cats);
       setLoadError(null);
     } catch (err) {

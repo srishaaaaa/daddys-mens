@@ -8,11 +8,13 @@ import type { GiftOffer, Reward } from "@/lib/loyalty/types";
 const actorOf = (role: string) => role;
 
 export async function loyaltyStateAction() {
-  await requireAdmin();
-  return L.loadState();
+  const role = await requireStaff();
+  const state = await L.loadState();
+  // Staff look customers up and register them; the audit log is for the owner only.
+  return role === "admin" ? state : { ...state, audit: [] };
 }
 export async function loyaltyLedgerAction(from?: number, to?: number) {
-  await requireAdmin();
+  await requireStaff();
   return L.listLedger(from, to);
 }
 export async function loyaltyConfigAction(raw: unknown, reason: string) {

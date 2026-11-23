@@ -89,23 +89,24 @@ export type LoyaltyData = LoyaltyState & {
   shopName: string;
 };
 
-async function allOrders() {
-  const { data } = await sb.from("orders").select("id, customer_phone, grand_total, created_at, status").order("created_at", { ascending: false }).limit(20000);
+async function allOrders(limit = 20000) {
+  const { data } = await sb.from("orders").select("id, customer_phone, grand_total, created_at, status").order("created_at", { ascending: false }).limit(limit);
   return (data ?? []).map((o: any) => ({ id: o.id as string, phone: phoneOfOrder(o.customer_phone), total: num(o.grand_total), createdAt: ms(o.created_at), status: (o.status === "COMPLETED" ? "completed" : "pending") as string }));
 }
 
 export async function loadState(): Promise<LoyaltyData> {
-  const [config, cust, rew, off, vou, msg, led, aud, prod, orders] = await Promise.all([
+  const [config, cust, rew, off, vou, msg, led, aud, prod, orders, shopSettings] = await Promise.all([
     getConfig(),
     sb.from("loyalty_customers").select("*").order("created_at", { ascending: false }),
     sb.from("loyalty_rewards").select("*").order("created_at", { ascending: true }),
     sb.from("loyalty_offers").select("*").order("created_at", { ascending: true }),
     sb.from("loyalty_vouchers").select("*").order("created_at", { ascending: false }).limit(5000),
     sb.from("loyalty_messages").select("*").order("created_at", { ascending: false }).limit(300),
-    sb.from("loyalty_ledger").select("customer_id, type, points, created_at").order("created_at", { ascending: false }).limit(20000),
+    sb.from("loyalty_ledger").select("customer_id, type, points, created_at").order("created_at", { ascending: false }).limit(10000),
     sb.from("loyalty_audit").select("*").order("created_at", { ascending: false }).limit(100),
     sb.from("products").select("id, name, category").order("name"),
-    allOrders(),
+    allOrders(8000),
+    getShopSettings(),
   ]);
   for (const r of [cust, rew, off, vou, msg, led, aud, prod]) if (r.error) throw r.error;
 
@@ -158,7 +159,7 @@ export async function loadState(): Promise<LoyaltyData> {
     stats, segments, purchases,
     products: (prod.data ?? []).map((p: any) => ({ id: p.id, name: p.name, category: p.category ?? "General" })),
     categories: [...cats].sort(),
-    shopName: (await getShopSettings()).shopName,
+    shopName: shopSettings.shopName,
   };
 }
 

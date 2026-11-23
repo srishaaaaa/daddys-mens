@@ -47,7 +47,7 @@ import {
 import InstallAppButton from "@/app/install-app-button";
 import InventoryPanel from "./InventoryPanel";
 import CouponsPanel from "./CouponsPanel";
-import LoyaltyPanel from "./LoyaltyPanel";
+import LoyaltyPanel, { prefetchLoyalty } from "./LoyaltyPanel";
 import ExpensesPanel from "./ExpensesPanel";
 import { listExpensesAction } from "@/app/pos/expense-actions";
 import SettingsPanel from "./SettingsPanel";
@@ -567,6 +567,7 @@ export default function POSBilling() {
       );
 
       getUpiConfigAction().then(setUpiCfg).catch(() => {});
+      void prefetchLoyalty(); // so the Loyalty tab opens instantly
       getShopProfileAction().then((p) => setShopProfile({ shopName: p.shopName, phone: p.phone })).catch(() => {});
       listBillOffersAction().then(setBillOffers).catch(() => {});
       listExpensesAction()

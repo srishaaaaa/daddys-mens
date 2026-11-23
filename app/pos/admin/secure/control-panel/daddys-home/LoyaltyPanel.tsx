@@ -25,14 +25,28 @@ export type Shared = { d: LoyaltyData; reload: () => Promise<void>; range: Retur
 
 const waLink = (phone: string, text: string) => `https://api.whatsapp.com/send/?phone=91${phone.replace(/\D/g, "").slice(-10)}&text=${encodeURIComponent(text)}`;
 
+/* The last result is kept while the app is open, so the tab shows straight away and refreshes quietly. */
+let cache: { d: LoyaltyData; ledger: LedgerEntry[]; at: number } | null = null;
+
+/** Loads the loyalty data ahead of time (called after sign-in) so the tab opens instantly. */
+export async function prefetchLoyalty() {
+  if (cache && Date.now() - cache.at < 30_000) return;
+  try {
+    const [d, ledger] = await Promise.all([loyaltyStateAction(), loyaltyLedgerAction()]);
+    cache = { d, ledger, at: Date.now() };
+  } catch {
+    /* the tab shows the error itself if it still fails when opened */
+  }
+}
+
 export default function LoyaltyPanel({ admin }: { admin: boolean }) {
   const [tab, setTab] = useState<Tab>(admin ? "dashboard" : "customers");
-  const [d, setD] = useState<LoyaltyData | null>(null);
+  const [d, setD] = useState<LoyaltyData | null>(cache?.d ?? null);
   const [error, setError] = useState<string | null>(null);
   const [period, setPeriod] = useState<Period>("all");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const [ledger, setLedger] = useState<LedgerEntry[]>([]);
+  const [ledger, setLedger] = useState<LedgerEntry[]>(cache?.ledger ?? []);
 
   const range = useMemo(() => rangeOf(period, from, to), [period, from, to]);
   const label =
@@ -44,6 +58,7 @@ export default function LoyaltyPanel({ admin }: { admin: boolean }) {
       setD(state);
       setLedger(led);
       setError(null);
+      if (!range) cache = { d: state, ledger: led, at: Date.now() };
     } catch (e) {
       console.error(e);
       setError("Could not load loyalty data. Has migration 0005_loyalty.sql been run in Supabase?");
@@ -57,7 +72,7 @@ export default function LoyaltyPanel({ admin }: { admin: boolean }) {
 
   const sum = (types: string[]) => ledger.filter((r) => types.includes(r.type)).reduce((a, r) => a + r.points, 0);
   const earned = sum(EARN_TYPES) + ledger.filter((r) => r.type === "adjustment" && r.points > 0).reduce((a, r) => a + r.points, 0);
-  const redeemed = -(sum(USE_TYPES) + ledger.filter((r) => r.type === "adjustment" && r.points < 0).reduce((a, r) => a + r.points, 0));
+  const redeemed = 0 - (sum(USE_TYPES) + ledger.filter((r) => r.type === "adjustment" && r.points < 0).reduce((a, r) => a + r.points, 0));
 
   const tabs: { v: Tab; t: string }[] = admin
     ? [
@@ -84,7 +99,17 @@ export default function LoyaltyPanel({ admin }: { admin: boolean }) {
         </div>
 
         {error && !d && <p className="rounded-xl bg-red-50 px-4 py-3 text-[13px] font-semibold text-red-700">{error}</p>}
-        {!d && !error && <p className="py-16 text-center text-[13px] text-slate-400">Loading loyalty data…</p>}
+        {!d && !error && (
+          <div className="animate-pulse" aria-label="Loading loyalty data">
+            <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-5">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <div key={i} className="h-[112px] rounded-2xl border border-black/10 bg-white" />
+              ))}
+            </div>
+            <div className="mb-5 h-9 w-2/3 rounded-lg bg-black/5" />
+            <div className="h-64 rounded-2xl border border-black/10 bg-white" />
+          </div>
+        )}
 
         {d && shared && (
           <>
@@ -102,6 +127,12 @@ export default function LoyaltyPanel({ admin }: { admin: boolean }) {
               <div className="mb-4 flex flex-wrap items-center gap-3">
                 <Pills label="Period:" value={period} onChange={setPeriod}
                   options={[{ v: "all", t: "All time" }, { v: "today", t: "Today" }, { v: "week", t: "This week" }, { v: "month", t: "This month" }, { v: "year", t: "This year" }, { v: "custom", t: "Custom" }]} />
+                {admin && tab === "dashboard" && (
+                  <div className="ml-auto flex flex-wrap items-center gap-2">
+                    <ExcelBtn onClick={() => excelDashboard(shared, earned, redeemed)}>Excel · whole dashboard</ExcelBtn>
+                    <ExcelBtn onClick={() => excelLedger(shared)}>Excel · all points transactions</ExcelBtn>
+                  </div>
+                )}
                 {period === "custom" && (
                   <span className="flex items-center gap-2 rounded-xl border border-black/10 bg-white px-3 py-1.5 text-[11px] font-bold uppercase text-slate-600">
                     From <input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} className="bg-transparent text-xs font-bold outline-none" />
@@ -124,6 +155,25 @@ export default function LoyaltyPanel({ admin }: { admin: boolean }) {
   );
 }
 
+/* ------------------------------------------------------------------ Excel exports (Dashboard tab) */
+function excelDashboard(s: Shared, earned: number, redeemed: number) {
+  const { d, range } = s;
+  const newCust = d.customers.filter((c) => within(c.createdAt, range)).length;
+  const gifts = d.vouchers.filter((v) => v.status === "used" && within(v.usedAt ?? 0, range)).reduce((a, v) => a + v.giftQty, 0);
+  downloadCsv("loyalty-dashboard", [
+    ["Metric", "Value"], ["Loyalty customers", d.customers.length], ["New customers", newCust], ["Points earned", earned],
+    ["Points redeemed", redeemed], ["Available points", d.totals.outstanding], ["Free gifts given", gifts],
+  ]);
+}
+function excelLedger(s: Shared) {
+  const { d, ledger } = s;
+  const who = (id: string) => d.customers.find((c) => c.id === id);
+  downloadCsv("loyalty-points-transactions", [
+    ["Date", "Customer", "Type", "Points", "Balance after", "Bill", "Note"],
+    ...ledger.map((l) => [fmtDateTime(l.createdAt), who(l.customerId)?.name || who(l.customerId)?.phone || "", l.type, l.points, l.balanceAfter, l.billId ?? "", l.description]),
+  ]);
+}
+
 /* ------------------------------------------------------------------ Dashboard */
 function Dashboard({ s, onOpen, earned, redeemed }: { s: Shared; onOpen: (t: Tab) => void; earned: number; redeemed: number }) {
   const { d, range, label, ledger } = s;
@@ -139,23 +189,8 @@ function Dashboard({ s, onOpen, earned, redeemed }: { s: Shared; onOpen: (t: Tab
   const given = d.vouchers.filter((v) => v.status === "used").slice(0, 6);
   const max = Math.max(1, ...d.months.map((m) => Math.max(m.earned, m.redeemed)));
 
-  const excelDashboard = () =>
-    downloadCsv("loyalty-dashboard", [
-      ["Metric", "Value"], ["Loyalty customers", d.customers.length], ["New customers", newCust], ["Points earned", earned],
-      ["Points redeemed", redeemed], ["Available points", d.totals.outstanding], ["Free gifts given", gifts],
-    ]);
-  const excelLedger = () =>
-    downloadCsv("loyalty-points-transactions", [
-      ["Date", "Customer", "Type", "Points", "Balance after", "Bill", "Note"],
-      ...ledger.map((l) => [fmtDateTime(l.createdAt), name(l.customerId)?.name || name(l.customerId)?.phone || "", l.type, l.points, l.balanceAfter, l.billId ?? "", l.description]),
-    ]);
-
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap justify-end gap-2">
-        <ExcelBtn onClick={excelDashboard}>Excel · whole dashboard</ExcelBtn>
-        <ExcelBtn onClick={excelLedger}>Excel · all points transactions</ExcelBtn>
-      </div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="New customers" value={newCust} hint={label} />
         <Stat label="Points earned" value={earned.toLocaleString("en-IN")} tone="green" hint={label} />

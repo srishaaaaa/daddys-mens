@@ -39,9 +39,12 @@ const isDateInPeriod = (dateStr: string, period: PeriodKey, startStr: string, en
 
 const inr = (n: number) => n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+// Kept while the app is open, so the tab shows straight away and refreshes quietly.
+let expensesCache: { e: Expense[]; c: ExpenseCategory[] } | null = null;
+
 export default function ExpensesPanel() {
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>(expensesCache?.e ?? []);
+  const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>(expensesCache?.c ?? []);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [expTitle, setExpTitle] = useState("");
@@ -68,6 +71,7 @@ export default function ExpensesPanel() {
   const load = useCallback(async () => {
     try {
       const [e, c] = await Promise.all([listExpensesAction(), listExpenseCategoriesAction()]);
+      expensesCache = { e, c };
       setExpenses(e);
       setExpenseCategories(c);
       setLoadError(null);

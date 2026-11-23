@@ -74,9 +74,12 @@ const WaIcon = ({ size = 15 }: { size?: number }) => <MessageCircle width={size}
 
 /* The form sits on the left and is always open; the list sits on the right. Editing a
    coupon loads it into the same form. Each coupon can be sent to a customer on WhatsApp. */
+// Kept while the app is open, so the tab shows straight away and refreshes quietly.
+let couponsCache: Coupon[] | null = null;
+
 export default function CouponsPanel() {
-  const [coupons, setCoupons] = useState<Coupon[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [coupons, setCoupons] = useState<Coupon[]>(couponsCache ?? []);
+  const [loading, setLoading] = useState(!couponsCache);
   const [error, setError] = useState<string | null>(null);
   const [f, setF] = useState<Form>(EMPTY);
   const [q, setQ] = useState("");
@@ -89,7 +92,9 @@ export default function CouponsPanel() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setCoupons(await listCouponsAction());
+      const fresh = await listCouponsAction();
+      couponsCache = fresh;
+      setCoupons(fresh);
       setError(null);
     } catch (err) {
       console.error("Failed to load coupons:", err);
