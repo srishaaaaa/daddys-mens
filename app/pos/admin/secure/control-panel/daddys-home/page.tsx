@@ -2198,12 +2198,12 @@ export default function POSBilling() {
           transitioned width/transform here can stall and leave the panel stuck
           off-screen). On desktop it keeps the smooth collapse. */}
       <aside
-        className={`fixed lg:sticky top-0 bottom-0 left-0 z-40 h-screen shrink-0 overflow-hidden bg-[#0F0F0F] text-[#FFFFFF] flex flex-col justify-between shadow-xl w-64 border-r border-white/10 lg:transition-all lg:duration-300 lg:ease-in-out ${isSidebarOpen ? "translate-x-0 lg:w-64" : "-translate-x-full lg:w-0 lg:border-r-0 lg:translate-x-0"}`}
+        className={`fixed lg:sticky top-0 bottom-0 left-0 z-40 h-dvh shrink-0 overflow-hidden bg-[#0F0F0F] text-[#FFFFFF] flex flex-col justify-between shadow-xl w-64 border-r border-white/10 lg:transition-all lg:duration-300 lg:ease-in-out ${isSidebarOpen ? "translate-x-0 lg:w-64" : "-translate-x-full lg:w-0 lg:border-r-0 lg:translate-x-0"}`}
       >
         <div className="w-64 flex flex-col justify-between h-full shrink-0 overflow-hidden relative">
-          <div className="flex flex-col">
+          <div className="flex flex-col flex-1 min-h-0 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {/* Header branding */}
-            <div className="p-6 border-b border-white/10 flex items-center justify-between gap-3">
+            <div className="p-6 [@media(max-height:780px)]:p-3 border-b border-white/10 flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 bg-[#1A1A1A] border border-white/10 rounded-xl flex items-center justify-center overflow-hidden shrink-0">
                   <img
@@ -2233,7 +2233,7 @@ export default function POSBilling() {
             <nav className="px-4 py-6 space-y-2">
               <button
                 onClick={() => selectTab("billing")}
-                className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+                className={`w-full flex items-center gap-4 px-4 py-3.5 [@media(max-height:780px)]:py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
                   activeTab === "billing"
                     ? "bg-[#FFFFFF] text-[#C1272D] shadow-lg scale-102"
                     : "text-white font-bold hover:bg-white/10 hover:text-white"
@@ -2246,7 +2246,7 @@ export default function POSBilling() {
                 <>
                   <button
                     onClick={() => selectTab("orders")}
-                    className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+                    className={`w-full flex items-center gap-4 px-4 py-3.5 [@media(max-height:780px)]:py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
                       activeTab === "orders"
                         ? "bg-[#FFFFFF] text-[#C1272D] shadow-lg scale-102"
                         : "text-white font-bold hover:bg-white/10 hover:text-white"
@@ -2257,7 +2257,7 @@ export default function POSBilling() {
                   </button>
                   <button
                     onClick={() => selectTab("inventory")}
-                    className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+                    className={`w-full flex items-center gap-4 px-4 py-3.5 [@media(max-height:780px)]:py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
                       activeTab === "inventory"
                         ? "bg-[#FFFFFF] text-[#C1272D] shadow-lg scale-102"
                         : "text-white font-bold hover:bg-white/10 hover:text-white"
@@ -2268,7 +2268,7 @@ export default function POSBilling() {
                   </button>
                   <button
                     onClick={() => selectTab("analytics")}
-                    className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+                    className={`w-full flex items-center gap-4 px-4 py-3.5 [@media(max-height:780px)]:py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
                       activeTab === "analytics"
                         ? "bg-[#FFFFFF] text-[#C1272D] shadow-lg scale-102"
                         : "text-white font-bold hover:bg-white/10 hover:text-white"
@@ -2279,7 +2279,7 @@ export default function POSBilling() {
                   </button>
                   <button
                     onClick={() => selectTab("expenses")}
-                    className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+                    className={`w-full flex items-center gap-4 px-4 py-3.5 [@media(max-height:780px)]:py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
                       activeTab === "expenses"
                         ? "bg-[#FFFFFF] text-[#C1272D] shadow-lg scale-102"
                         : "text-white font-bold hover:bg-white/10 hover:text-white"
@@ -2290,7 +2290,7 @@ export default function POSBilling() {
                   </button>
                   <button
                     onClick={() => selectTab("coupons")}
-                    className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+                    className={`w-full flex items-center gap-4 px-4 py-3.5 [@media(max-height:780px)]:py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
                       activeTab === "coupons"
                         ? "bg-[#FFFFFF] text-[#C1272D] shadow-lg scale-102"
                         : "text-white font-bold hover:bg-white/10 hover:text-white"
@@ -2303,7 +2303,7 @@ export default function POSBilling() {
               )}
               <button
                 onClick={() => selectTab("loyalty")}
-                className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+                className={`w-full flex items-center gap-4 px-4 py-3.5 [@media(max-height:780px)]:py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
                   activeTab === "loyalty"
                     ? "bg-[#FFFFFF] text-[#C1272D] shadow-lg scale-102"
                     : "text-white font-bold hover:bg-white/10 hover:text-white"
@@ -2315,7 +2315,7 @@ export default function POSBilling() {
               {role === 'admin' && (
                 <button
                   onClick={() => selectTab("settings")}
-                  className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+                  className={`w-full flex items-center gap-4 px-4 py-3.5 [@media(max-height:780px)]:py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
                     activeTab === "settings"
                       ? "bg-[#FFFFFF] text-[#C1272D] shadow-lg scale-102"
                       : "text-white font-bold hover:bg-white/10 hover:text-white"
@@ -2326,10 +2326,10 @@ export default function POSBilling() {
                 </button>
               )}
 
-              <div className="pt-4 border-t border-white/10 mt-4">
+              <div className="pt-4 [@media(max-height:780px)]:pt-2 border-t border-white/10 mt-4 [@media(max-height:780px)]:mt-2">
                 <button
                   onClick={handleLogout}
-                  className="w-full flex items-center gap-4 px-4 py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider text-white bg-black/20 hover:bg-[#E03A3F]/10 transition-all cursor-pointer"
+                  className="w-full flex items-center gap-4 px-4 py-3.5 [@media(max-height:780px)]:py-2 rounded-xl font-bold text-xs uppercase tracking-wider text-white bg-black/20 hover:bg-[#E03A3F]/10 transition-all cursor-pointer"
                 >
                   <LogOut className="w-5 h-5" />
                   Log Out
@@ -2339,7 +2339,7 @@ export default function POSBilling() {
           </div>
 
           {/* Footer branding */}
-          <div className="p-6 border-t border-white/10 flex items-center justify-start gap-4">
+          <div className="p-4 shrink-0 border-t border-white/10 bg-[#0F0F0F] flex items-center justify-start gap-4">
             <div className="w-8 h-8 rounded-full border border-white/20 flex items-center justify-center bg-[#C1272D] shrink-0">
               <span className="text-white font-bold text-sm">U</span>
             </div>
@@ -3152,7 +3152,12 @@ export default function POSBilling() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setApplyGST(true)}
+                        onClick={() => {
+                          // Switching back to GST uses the rate and mode saved in Settings → Billing defaults.
+                          setApplyGST(true);
+                          setGstPercentage(billingDefaults.current.rate);
+                          setGstInclusive(billingDefaults.current.inclusive);
+                        }}
                         className={`flex-1 rounded-full py-2.5 text-[11px] font-extrabold uppercase tracking-wider cursor-pointer transition ${applyGST ? "bg-[#C1272D] text-white shadow-sm" : "text-[#000000] hover:bg-black/5"}`}
                       >
                         GST Invoice

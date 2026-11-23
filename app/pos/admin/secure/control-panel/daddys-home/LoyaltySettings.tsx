@@ -74,13 +74,17 @@ export default function LoyaltySettings({ d, reload }: { d: LoyaltyData; reload:
   return (
     <div className="space-y-4">
       {/* sticky save bar */}
-      <div className="sticky top-0 z-20 flex flex-wrap items-center gap-3 rounded-2xl border border-black/10 bg-[#FDFCF7]/95 px-4 py-3 shadow-sm backdrop-blur">
+      <div className="z-20 flex flex-col gap-3 rounded-2xl sm:sticky sm:top-0 sm:flex-row sm:flex-wrap sm:items-center border border-black/10 bg-[#FDFCF7]/95 px-4 py-3 shadow-sm backdrop-blur">
+        <div className="flex items-center gap-3 sm:contents">
         <Switch on={c.enabled} onChange={(v) => set((x) => { x.enabled = v; })} label="Loyalty programme" />
         <span className="min-w-0 flex-1 text-[13px] font-bold">{c.enabled ? "Loyalty programme is ON" : "Loyalty programme is OFF — no points, no loyalty gifts, no bill offers, no messages"}</span>
-        <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason for the change (audit log)" className="h-10 w-64 rounded-xl border border-black/10 bg-white px-3 text-[13px] outline-none" />
+        </div>
+        <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason for the change (audit log)" className="h-10 w-full rounded-xl border sm:w-64 border-black/10 bg-white px-3 text-[13px] outline-none" />
+        <div className="flex flex-wrap items-center gap-2 sm:contents">
         <ExcelBtn onClick={() => downloadCsv("loyalty-settings-log", [["When", "Who", "Action", "Reason"], ...d.audit.filter((a) => a.action === "settings").map((a) => [fmtDateTime(a.createdAt), a.actor, a.action, a.reason])])} />
         <Btn disabled={!dirty || busy} onClick={() => setC(structuredClone(d.config))}>Discard</Btn>
         <Btn kind="red" disabled={!dirty || busy || !rangesValid(c.redeem.ranges)} onClick={save}>{busy ? "Saving…" : "Save settings"}</Btn>
+        </div>
       </div>
 
       <Card title="1 · Earning points" sub="Every time a customer pays a bill, they collect points. Decide how many here.">

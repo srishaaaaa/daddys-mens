@@ -70,10 +70,12 @@ export default function LoyaltyRewards({ d, reload }: { d: LoyaltyData; reload: 
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end"><ExcelBtn onClick={excel} /></div>
-      <p className="rounded-xl bg-[#F6F3E9] px-4 py-3 text-[13px] text-slate-700">
-        A free gift is always an item from your menu. When it is given, it shows on the bill as a <b>FREE GIFT ₹0</b> line and comes off the normal stock — and shows in the Stock movement log.
-      </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <p className="flex-1 rounded-xl bg-[#F6F3E9] px-4 py-3 text-[13px] text-slate-700">
+          A free gift is always an item from your menu. When it is given, it shows on the bill as a <b>FREE GIFT ₹0</b> line and comes off the normal stock — and shows in the Stock movement log.
+        </p>
+        <div className="flex shrink-0 justify-end"><ExcelBtn onClick={excel} /></div>
+      </div>
 
       <Section n={1} title="Gifts customers unlock with points" addLabel="Add gift" add={() => setReward({ trigger: "points", giftQty: 1, pointsCost: 100, active: true })}
         blurb="For example: 100 points = a free item. It unlocks by itself when the customer has enough points, and the points are used only when the gift is handed over on a paid bill."
