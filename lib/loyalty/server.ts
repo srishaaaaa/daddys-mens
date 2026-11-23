@@ -463,9 +463,9 @@ export async function settleOrder(s: SettleInput, actor: string): Promise<{ earn
 
 /** Loyalty summary for a bill (printed on the invoice). */
 export async function orderLoyalty(orderId: string) {
-  const { data } = await sb.from("orders").select("loyalty_customer_id, loyalty_prev, loyalty_earned, loyalty_used, loyalty_balance").eq("id", orderId).maybeSingle();
+  const { data } = await sb.from("orders").select("loyalty_customer_id, loyalty_prev, loyalty_earned, loyalty_used, loyalty_balance, loyalty_discount").eq("id", orderId).maybeSingle();
   if (!data || !data.loyalty_customer_id) return null;
-  return { prev: num(data.loyalty_prev), earned: num(data.loyalty_earned), used: num(data.loyalty_used), balance: num(data.loyalty_balance) };
+  return { prev: num(data.loyalty_prev), earned: num(data.loyalty_earned), used: num(data.loyalty_used), balance: num(data.loyalty_balance), discount: num(data.loyalty_discount) };
 }
 
 /* ---------------------------------------------------------------- phone suggestions (billing) */

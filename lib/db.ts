@@ -45,6 +45,10 @@ export type StoredOrder = {
   /** Membership discount applied on this bill (needs migration 0013). */
   member_no?: string | null;
   member_plan?: string | null;
+  /** Loyalty on this bill (set when the bill is settled): points used / earned and the rupees they took off. */
+  loyalty_used?: number;
+  loyalty_earned?: number;
+  loyalty_discount?: number;
   order_items: StoredOrderItem[];
 };
 
@@ -155,7 +159,7 @@ const mapOrder = (o: any): StoredOrder => ({
 });
 
 export async function getOrders(): Promise<StoredOrder[]> {
-  const [{ data, error }, { data: sp }, { data: gs }, { data: mb }] = await Promise.all([
+  const [{ data, error }, { data: sp }, { data: gs }, { data: mb }, { data: ly }] = await Promise.all([
     sb.from("orders").select(ORDER_SELECT).order("created_at", { ascending: false }),
     // Split amounts need migration 0008; without it the list still loads.
     sb.from("orders").select("id, split_cash, split_upi, split_card"),
@@ -163,6 +167,8 @@ export async function getOrders(): Promise<StoredOrder[]> {
     sb.from("orders").select("id, is_gst, gst_inclusive, gst_percent, gst_amount"),
     // Which bills had a member discount (migration 0013).
     sb.from("orders").select("id, member_no, member_plan").not("member_no", "is", null),
+    // Loyalty points used / earned on bills.
+    sb.from("orders").select("id, loyalty_used, loyalty_earned, loyalty_discount").not("loyalty_customer_id", "is", null),
   ]);
   if (error) {
     console.error("Error fetching orders from DB:", error);
@@ -199,6 +205,17 @@ export async function getOrders(): Promise<StoredOrder[]> {
       if (r) {
         o.member_no = r.member_no;
         o.member_plan = r.member_plan;
+      }
+    }
+  }
+  if (ly) {
+    const byId = new Map((ly as any[]).map((r) => [r.id, r]));
+    for (const o of orders) {
+      const r = byId.get(o.id);
+      if (r) {
+        o.loyalty_used = num(r.loyalty_used);
+        o.loyalty_earned = num(r.loyalty_earned);
+        o.loyalty_discount = num(r.loyalty_discount);
       }
     }
   }

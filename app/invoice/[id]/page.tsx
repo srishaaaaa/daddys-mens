@@ -99,6 +99,12 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
   const balance = Math.max(0, Math.round((order.grand_total - paid) * 100) / 100);
   const change = method === "CASH" ? Math.max(0, Math.round((paid - order.grand_total) * 100) / 100) : 0;
 
+  // Discounts are shown one by one: the member / coupon / manual discount, and the loyalty points used.
+  const loyDisc = loyalty?.discount ?? 0;
+  const slotDisc = Math.max(0, Math.round((order.discount_amount - loyDisc) * 100) / 100);
+  const slotLabel = order.member_no ? `Member discount · ${order.member_plan || "Member"}` : "Discount";
+  const slotPct = order.discount_type === "PERCENT" && order.discount_value ? ` (${order.discount_value}%)` : "";
+
   const lab = "text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500";
 
   return (
@@ -205,10 +211,16 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
           <div>
             <div className="space-y-2 text-[13px]">
               <div className="flex justify-between"><span className="text-slate-700">Subtotal</span><span className="font-mono font-semibold text-black">{money(order.subtotal)}</span></div>
-              {order.discount_amount > 0 && (
+              {slotDisc > 0 && (
                 <div className="flex justify-between">
-                  <span className="text-slate-700">{order.member_no ? `Member discount · ${order.member_plan || "Member"}` : "Discount"}{order.discount_type === "PERCENT" && order.discount_value ? ` (${order.discount_value}%)` : ""}</span>
-                  <span className="font-mono font-semibold text-[#C1272D]">− {money(order.discount_amount)}</span>
+                  <span className="text-slate-700">{slotLabel}{slotPct}</span>
+                  <span className="font-mono font-semibold text-[#C1272D]">− {money(slotDisc)}</span>
+                </div>
+              )}
+              {loyDisc > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-slate-700">Loyalty points used{loyalty?.used ? ` (${loyalty.used} pts)` : ""}</span>
+                  <span className="font-mono font-semibold text-[#C1272D]">− {money(loyDisc)}</span>
                 </div>
               )}
               {order.delivery_fee > 0 && (
@@ -270,7 +282,8 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
         ))}
         <hr />
         <div className="rc-row"><span>Subtotal ({itemCount})</span><span>{money(order.subtotal)}</span></div>
-        {order.discount_amount > 0 && <div className="rc-row"><span>{order.member_no ? "Member discount" : "Discount"}{order.discount_type === "PERCENT" && order.discount_value ? ` (${order.discount_value}%)` : ""}</span><span>− {money(order.discount_amount)}</span></div>}
+        {slotDisc > 0 && <div className="rc-row"><span>{order.member_no ? "Member discount" : "Discount"}{slotPct}</span><span>− {money(slotDisc)}</span></div>}
+        {loyDisc > 0 && <div className="rc-row"><span>Loyalty points{loyalty?.used ? ` (${loyalty.used} pts)` : ""}</span><span>− {money(loyDisc)}</span></div>}
         {order.delivery_fee > 0 && <div className="rc-row"><span>Delivery</span><span>{money(order.delivery_fee)}</span></div>}
         {gstItem ? (
           <>

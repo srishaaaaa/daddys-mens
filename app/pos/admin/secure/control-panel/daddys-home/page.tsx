@@ -138,6 +138,10 @@ type CompletedOrder = {
   /** membership discount applied on this bill */
   memberNo?: string | null;
   memberPlan?: string | null;
+  /** loyalty on this bill: points used / earned and the rupees the used points took off */
+  loyaltyUsed?: number;
+  loyaltyEarned?: number;
+  loyaltyDiscount?: number;
   date: string;
   status: "Completed" | "Pending";
 };
@@ -378,6 +382,7 @@ function OrderBody({ o }: { o: CompletedOrder }) {
   const lines = o.items.filter((i) => !i.name.startsWith("GST ("));
   const gstLine = o.items.find((i) => i.name.startsWith("GST ("));
   const gstAmt = gstLine ? gstLine.price * gstLine.qty : 0;
+  const slotDisc = Math.max(0, Math.round((o.discount - (o.loyaltyDiscount ?? 0)) * 100) / 100);
   const money = (n: number) => `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
   const lab = "text-[10px] font-extrabold uppercase tracking-[0.14em] text-slate-500";
   return (
@@ -392,6 +397,7 @@ function OrderBody({ o }: { o: CompletedOrder }) {
                     <span className="mt-1.5 inline-block rounded bg-slate-100 px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wide text-slate-800">{isGst ? "GST bill" : "Non-GST bill"}</span>
                   </div>
                   <div><p className={lab}>Date &amp; time</p><p className="mt-1 text-[15px] text-black">{new Date(o.date).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" })}</p></div>
+                  {(o.loyaltyEarned ?? 0) > 0 && <div><p className={lab}>Loyalty points earned</p><p className="mt-1 text-[15px] text-black">+{o.loyaltyEarned}</p></div>}
                   {o.memberNo && <div><p className={lab}>Membership</p><p className="mt-1 text-[15px] text-black">{o.memberNo}{o.memberPlan ? ` · ${o.memberPlan}` : ""}</p></div>}
                   <div><p className={lab}>Payment</p><p className="mt-1 text-[15px] text-black">{o.paymentMethod === "GPAY" ? "UPI" : o.paymentMethod === "SPLIT" ? [o.splitCash ? `Cash ${money(o.splitCash)}` : "", o.splitUpi ? `UPI ${money(o.splitUpi)}` : "", o.splitCard ? `Card ${money(o.splitCard)}` : ""].filter(Boolean).join(" + ") || "Split" : o.paymentMethod === "CARD" ? "Card" : "Cash"}</p></div>
                 </div>
@@ -411,7 +417,8 @@ function OrderBody({ o }: { o: CompletedOrder }) {
 
                 <div className="mt-3 space-y-2 border-t border-black/10 pt-4 text-[15px]">
                   <div className="flex justify-between"><span className="text-slate-700">Subtotal</span><b className="text-black">{money(o.subtotal)}</b></div>
-                  {o.discount > 0 && <div className="flex justify-between"><span className="text-slate-700">{o.memberNo ? `Member discount · ${o.memberPlan || "Member"}` : "Discount"}{o.discountType === "PERCENT" && o.discountValue ? ` (${o.discountValue}%)` : ""}</span><b className="text-black">-{money(o.discount)}</b></div>}
+                  {slotDisc > 0 && <div className="flex justify-between"><span className="text-slate-700">{o.memberNo ? `Member discount · ${o.memberPlan || "Member"}` : "Discount"}{o.discountType === "PERCENT" && o.discountValue ? ` (${o.discountValue}%)` : ""}</span><b className="text-black">-{money(slotDisc)}</b></div>}
+                  {(o.loyaltyDiscount ?? 0) > 0 && <div className="flex justify-between"><span className="text-slate-700">Loyalty points used{o.loyaltyUsed ? ` (${o.loyaltyUsed} pts)` : ""}</span><b className="text-black">-{money(o.loyaltyDiscount ?? 0)}</b></div>}
                   {o.deliveryFee > 0 && <div className="flex justify-between"><span className="text-slate-700">Delivery</span><b className="text-black">{money(o.deliveryFee)}</b></div>}
                   {gstLine && <div className="flex justify-between"><span className="text-slate-700">{gstLine.name}</span><b className="text-black">{money(gstAmt)}</b></div>}
                   <div className="flex items-baseline justify-between pt-2">
@@ -682,6 +689,9 @@ export default function POSBilling() {
             isGst: o.is_gst,
             memberNo: o.member_no ?? null,
             memberPlan: o.member_plan ?? null,
+            loyaltyUsed: o.loyalty_used ?? 0,
+            loyaltyEarned: o.loyalty_earned ?? 0,
+            loyaltyDiscount: o.loyalty_discount ?? 0,
             date: o.created_at,
             status: (o.status === "COMPLETED" ? "Completed" : "Pending") as
               | "Completed"
@@ -1237,6 +1247,7 @@ export default function POSBilling() {
         offerEntitled.filter((e) => addedOffers.includes(e.key)).map((e) => ({ offerId: e.key.replace(/^offer:/, ""), qty: e.qty })),
       ).catch(() => {});
     }
+    let settledNow: { earned: number; used: number } | null = null;
     if (member?.customer) {
       const settled = await loyaltySettleAction({
         orderId: newOrderId,
@@ -1244,6 +1255,7 @@ export default function POSBilling() {
         pointsUsed: loyaltyPoints,
         voucherIds: claimedVouchers,
       }).catch(() => null);
+      settledNow = settled ? { earned: settled.earned, used: settled.used } : null;
       if (settled && settled.earned > 0) {
         setSavedLoyaltyNote(`${member.customer.name || "Customer"} earned ${settled.earned} points · balance ${settled.balance}`);
       }
@@ -1283,6 +1295,9 @@ export default function POSBilling() {
       paymentMethod,
       memberNo: memberDiscountOn ? mshipApplied!.memberNo : null,
       memberPlan: memberDiscountOn ? mshipApplied!.plan : null,
+      loyaltyUsed: settledNow?.used ?? 0,
+      loyaltyEarned: settledNow?.earned ?? 0,
+      loyaltyDiscount: settledNow && settledNow.used > 0 ? loyaltyDiscount : 0,
       date: createdAt,
       status: "Completed",
     };
@@ -1655,6 +1670,19 @@ export default function POSBilling() {
   const offlineRevenue = analyticsFilteredOrders
     .filter((o) => o.source === "OFFLINE")
     .reduce((acc, o) => acc + o.grandTotal, 0);
+
+  // Discounts and programmes: who got what off, split by where it came from.
+  const loyOf = (o: CompletedOrder) => o.loyaltyDiscount ?? 0;
+  const slotOf = (o: CompletedOrder) => Math.max(0, o.discount - loyOf(o));
+  const memberBills = analyticsFilteredOrders.filter((o) => o.memberNo && slotOf(o) > 0);
+  const memberDiscountTotal = memberBills.reduce((a, o) => a + slotOf(o), 0);
+  const loyaltyBills = analyticsFilteredOrders.filter((o) => loyOf(o) > 0);
+  const loyaltyDiscountTotal = loyaltyBills.reduce((a, o) => a + loyOf(o), 0);
+  const loyaltyPointsUsedTotal = loyaltyBills.reduce((a, o) => a + (o.loyaltyUsed ?? 0), 0);
+  const loyaltyPointsEarnedTotal = analyticsFilteredOrders.reduce((a, o) => a + (o.loyaltyEarned ?? 0), 0);
+  const otherDiscountBills = analyticsFilteredOrders.filter((o) => !o.memberNo && slotOf(o) > 0);
+  const otherDiscountTotal = otherDiscountBills.reduce((a, o) => a + slotOf(o), 0);
+  const memberActive = mship.members.filter((m) => !m.off && !(m.expiresAt && m.expiresAt < new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }))).length;
 
   // GST invoices vs non-GST bills
   const gstOrdersList = analyticsFilteredOrders.filter(isGstOrder);
@@ -4315,8 +4343,18 @@ export default function POSBilling() {
                     sub={`${splitOrdersList.length} bill${splitOrdersList.length === 1 ? "" : "s"} - Cash ₹${inr2(sumSplit("splitCash"))} + UPI ₹${inr2(sumSplit("splitUpi"))}${sumSplit("splitCard") > 0 ? ` + Card ₹${inr2(sumSplit("splitCard"))}` : ""}`} />
                   <AnalyticsCard label="Card Received" tone="violet" icon={<IndianRupee className="w-4 h-4" />} value={`₹${inr2(cardReceivedTotal)}`} sub={`${plural(cardOrdersList.length + splitOrdersList.filter((o) => (o.splitCard ?? 0) > 0).length, "bill")}`} />
                 </div>
-                <p className="mb-8 text-[11.5px] text-[#4A4038]">
+                <p className="mb-4 text-[11.5px] text-[#4A4038]">
                   Split bills are already included in the Cash, GPay / UPI and Card boxes (the Split box shows how much of them came from split payments).
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-2">
+                  <AnalyticsCard label="Member Discounts" tone="green" icon={<IdCard className="w-4 h-4" />} value={`₹${inr2(memberDiscountTotal)}`} sub={`${plural(memberBills.length, "bill")} · ${memberActive} active member${memberActive === 1 ? "" : "s"}`} />
+                  <AnalyticsCard label="Loyalty Points Redeemed" tone="pink" icon={<Star className="w-4 h-4" />} value={`₹${inr2(loyaltyDiscountTotal)}`} sub={`${loyaltyPointsUsedTotal.toLocaleString("en-IN")} pts used · ${plural(loyaltyBills.length, "bill")}`} />
+                  <AnalyticsCard label="Loyalty Points Earned" tone="violet" icon={<Star className="w-4 h-4" />} value={loyaltyPointsEarnedTotal.toLocaleString("en-IN")} sub="from these bills" />
+                  <AnalyticsCard label="Coupon / Manual Discounts" icon={<Percent className="w-4 h-4" />} value={`₹${inr2(otherDiscountTotal)}`} sub={plural(otherDiscountBills.length, "bill")} />
+                </div>
+                <p className="mb-8 text-[11.5px] text-[#4A4038]">
+                  Membership fees collected so far: <b>₹{inr2(mship.revenue)}</b> ({mship.members.length} member{mship.members.length === 1 ? "" : "s"} in total). Each discount is counted once, under where it came from.
                 </p>
 
                 {/* Main Charts & Breakdowns */}
