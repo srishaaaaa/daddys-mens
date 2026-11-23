@@ -45,6 +45,11 @@ export type StoredOrder = {
   /** Membership discount applied on this bill (needs migration 0013). */
   member_no?: string | null;
   member_plan?: string | null;
+  /** Membership fee charged on this bill, what happened to the membership on it (e.g. "Gold activated") and the extra offer shown. Needs migration 0014. */
+  membership_fee?: number;
+  member_event?: string | null;
+  member_event_no?: string | null;
+  member_offer?: string | null;
   /** Loyalty on this bill (set when the bill is settled): points used / earned and the rupees they took off. */
   loyalty_used?: number;
   loyalty_earned?: number;
@@ -166,7 +171,7 @@ export async function getOrders(): Promise<StoredOrder[]> {
     // GST flag (migration 0010); without it analytics falls back to looking for the GST line.
     sb.from("orders").select("id, is_gst, gst_inclusive, gst_percent, gst_amount"),
     // Which bills had a member discount (migration 0013).
-    sb.from("orders").select("id, member_no, member_plan").not("member_no", "is", null),
+    sb.from("orders").select("id, member_no, member_plan, membership_fee, member_event, member_event_no, member_offer").or("member_no.not.is.null,member_event.not.is.null,membership_fee.gt.0"),
     // Loyalty points used / earned on bills.
     sb.from("orders").select("id, loyalty_used, loyalty_earned, loyalty_discount").not("loyalty_customer_id", "is", null),
   ]);
@@ -205,6 +210,10 @@ export async function getOrders(): Promise<StoredOrder[]> {
       if (r) {
         o.member_no = r.member_no;
         o.member_plan = r.member_plan;
+        o.membership_fee = num(r.membership_fee);
+        o.member_event = r.member_event ?? null;
+        o.member_event_no = r.member_event_no ?? null;
+        o.member_offer = r.member_offer ?? null;
       }
     }
   }
@@ -228,7 +237,7 @@ export async function getOrder(id: string): Promise<StoredOrder | null> {
     // Read separately so the invoice still works before migration 0004 is applied.
     sb.from("orders").select("upi_channel").eq("id", id).maybeSingle(),
     sb.from("orders").select("split_cash, split_upi, split_card").eq("id", id).maybeSingle(),
-    sb.from("orders").select("member_no, member_plan").eq("id", id).maybeSingle(),
+    sb.from("orders").select("member_no, member_plan, membership_fee, member_event, member_event_no, member_offer").eq("id", id).maybeSingle(),
   ]);
   if (error) {
     console.error(`Error fetching order ${id} from DB:`, error);
@@ -240,6 +249,10 @@ export async function getOrder(id: string): Promise<StoredOrder | null> {
   if (mb) {
     order.member_no = (mb as any).member_no ?? null;
     order.member_plan = (mb as any).member_plan ?? null;
+    order.membership_fee = num((mb as any).membership_fee);
+    order.member_event = (mb as any).member_event ?? null;
+    order.member_event_no = (mb as any).member_event_no ?? null;
+    order.member_offer = (mb as any).member_offer ?? null;
   }
   if (sp) {
     order.split_cash = num(sp.split_cash);
@@ -285,6 +298,13 @@ export async function saveOrder(order: StoredOrder): Promise<void> {
   if (order.member_no) {
     const { error: mErr } = await sb.from("orders").update({ member_no: order.member_no, member_plan: order.member_plan ?? "" }).eq("id", order.id);
     if (mErr) console.error("Could not save the membership on the bill (is migration 0013 applied?):", mErr.message);
+  }
+  if ((order.membership_fee ?? 0) > 0 || order.member_event || order.member_offer) {
+    const { error: m2 } = await sb
+      .from("orders")
+      .update({ membership_fee: order.membership_fee ?? 0, member_event: order.member_event ?? null, member_event_no: order.member_event_no ?? null, member_offer: order.member_offer ?? null })
+      .eq("id", order.id);
+    if (m2) console.error("Could not save the membership details on the bill (is migration 0014 applied?):", m2.message);
   }
   // Deduct stock only the first time a bill is saved (saves are upserts).
   if (isNew) {

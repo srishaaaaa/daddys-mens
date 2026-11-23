@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import {
   User,
   Receipt,
@@ -49,9 +49,12 @@ import InstallAppButton from "@/app/install-app-button";
 import InventoryPanel from "./InventoryPanel";
 import CouponsPanel from "./CouponsPanel";
 import LoyaltyPanel, { prefetchLoyalty } from "./LoyaltyPanel";
-import MembershipPanel, { applyResult } from "./MembershipPanel";
-import MembershipBillingBox from "./MembershipBillingBox";
-import { EMPTY_OVERVIEW, type Overview } from "@/lib/membershipTypes";
+import MembershipPanel, { applyResult, type BillRow } from "./MembershipPanel";
+import MembershipBillingBox, { type PendingEnroll } from "./MembershipBillingBox";
+import MembershipAnalytics, { type SalesBill } from "./MembershipAnalytics";
+import { enrollFromBillingAction, attachMemberToOrderAction, markMessageAction } from "@/app/pos/membership-actions";
+import { waLink } from "@/lib/membershipMessages";
+import { EMPTY_OVERVIEW, liveOffer, memberDiscount, type MemberMessage, type Overview } from "@/lib/membershipTypes";
 import { prefetchInventory } from "./InventoryPanel";
 import { prefetchCoupons } from "./CouponsPanel";
 import { prefetchExpenses } from "./ExpensesPanel";
@@ -555,6 +558,11 @@ export default function POSBilling() {
   // Membership: plans, members and fees (from the first load), and the member discount on the current bill.
   const [mship, setMship] = useState<Overview>(EMPTY_OVERVIEW);
   const [mshipApplied, setMshipApplied] = useState<{ memberNo: string; plan: string; pct: number; phone: string } | null>(null);
+  // A membership the cashier chose to activate / upgrade / renew on this bill (done when the bill is completed).
+  const [pendingEnroll, setPendingEnroll] = useState<PendingEnroll | null>(null);
+  // The cashier removed the automatic member discount for this customer: don't put it back.
+  const [mshipRemoved, setMshipRemoved] = useState<string | null>(null);
+  const [savedMembershipMsg, setSavedMembershipMsg] = useState<MemberMessage | null>(null);
 
   // Analytics filter/navigation states
   // Expense amounts and dates, for Net Profit on the dashboard (admin only; empty for staff).
@@ -1015,6 +1023,35 @@ export default function POSBilling() {
   // added on top of them; changing either one switches it off by itself.
   const memberDiscountOn =
     !!mshipApplied && mshipApplied.phone === customerPhone && discountType === "percent" && discountValue === mshipApplied.pct && selectedCoupon === "none";
+  // The customer's membership, found by their number. Their discount goes on the bill by itself (the cashier can remove it).
+  const currentMember = customerPhone.length === 10 ? mship.members.find((x) => x.phone === customerPhone) : undefined;
+  const wantedDiscount = currentMember ? memberDiscount(currentMember, subtotal) : null;
+  const billRows: BillRow[] = useMemo(
+    () =>
+      orders.map((o) => ({
+        id: o.id, name: o.customerName, phone: (o.customerPhone || "").replace(/\D/g, "").slice(-10), subtotal: o.subtotal, discount: o.discount,
+        completed: o.status === "Completed", date: o.date, total: o.grandTotal,
+      })),
+    [orders],
+  );
+  // The membership fee chosen for this bill is charged as its own line (never discounted, never taxed).
+  const membershipFee = pendingEnroll && pendingEnroll.phone === customerPhone ? pendingEnroll.fee : 0;
+  useEffect(() => {
+    const on = !!mshipApplied && mshipApplied.phone === customerPhone;
+    if (mshipApplied && (!on || !wantedDiscount || wantedDiscount.pct !== mshipApplied.pct)) {
+      // no longer valid (other customer, bill too small, different rate): take our discount off again
+      if (discountType === "percent" && discountValue === mshipApplied.pct && selectedCoupon === "none") setDiscountValue(0);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setMshipApplied(null);
+      return;
+    }
+    if (!mshipApplied && currentMember && wantedDiscount && subtotal > 0 && discountValue === 0 && selectedCoupon === "none" && mshipRemoved !== customerPhone) {
+      setDiscountType("percent");
+      setDiscountValue(wantedDiscount.pct);
+      setMshipApplied({ memberNo: currentMember.memberNo, plan: currentMember.planName, pct: wantedDiscount.pct, phone: currentMember.phone });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerPhone, subtotal, discountValue, discountType, selectedCoupon, wantedDiscount?.pct, currentMember?.id, mshipApplied, mshipRemoved]);
   // Loyalty: the cap comes from the shop's rules; the server re-checks everything when the bill is saved.
   const memberAvailable = member?.customer?.available ?? 0;
   const giftPointsReserved = member?.customer
@@ -1060,7 +1097,7 @@ export default function POSBilling() {
       : afterDiscount * (gstPercentage / 100)
     : 0;
   const taxableBase = applyGST && gstInclusive ? afterDiscount - gstAmount : afterDiscount;
-  const grandTotal = afterDiscount + (gstInclusive ? 0 : gstAmount) + deliveryFee;
+  const grandTotal = afterDiscount + (gstInclusive ? 0 : gstAmount) + deliveryFee + membershipFee;
 
   const randomInvoiceSuffix = () => {
     const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -1193,6 +1230,10 @@ export default function POSBilling() {
       }
     }
 
+    // A membership chosen on this bill: its fee is in the total; the membership itself is created once the bill is saved.
+    const enroll = pendingEnroll && pendingEnroll.phone === customerPhone ? pendingEnroll : null;
+    const enrollLabel = enroll ? (enroll.kind === "upgrade" ? `Upgraded to ${enroll.planName}` : `${enroll.planName} ${enroll.kind === "activate" ? "activated" : "renewed"}`) : null;
+
     try {
       await createOrderAction({
         id: newOrderId,
@@ -1214,6 +1255,9 @@ export default function POSBilling() {
         gst_amount: applyGST ? gstAmount : 0,
         member_no: memberDiscountOn ? mshipApplied!.memberNo : null,
         member_plan: memberDiscountOn ? mshipApplied!.plan : null,
+        membership_fee: membershipFee,
+        member_event: enrollLabel,
+        member_offer: memberDiscountOn && currentMember ? liveOffer(currentMember) || null : null,
         upi_channel: paymentMethod === "GPAY" || (paymentMethod === "SPLIT" && Number(splitUpi) > 0) ? upiVia || defaultUpiVia : null,
         split_cash: paymentMethod === "SPLIT" ? Number(splitCash) || 0 : 0,
         split_upi: paymentMethod === "SPLIT" ? Number(splitUpi) || 0 : 0,
@@ -1258,6 +1302,17 @@ export default function POSBilling() {
       settledNow = settled ? { earned: settled.earned, used: settled.used } : null;
       if (settled && settled.earned > 0) {
         setSavedLoyaltyNote(`${member.customer.name || "Customer"} earned ${settled.earned} points · balance ${settled.balance}`);
+      }
+    }
+    if (enroll) {
+      try {
+        const r = await unwrap(enrollFromBillingAction({ kind: enroll.kind, planId: enroll.planId, phone: customerPhone, name: (customerName || enroll.name).trim(), source: enroll.source }));
+        setMship((d) => applyResult(d, r));
+        attachMemberToOrderAction(newOrderId, r.member.memberNo).catch(() => {});
+        setSavedMembershipMsg(r.message ?? null);
+        setSavedLoyaltyNote((n) => `${n ? n + " · " : ""}Membership: ${r.label} · ${r.member.memberNo}`);
+      } catch (e) {
+        alert(`The bill was saved, but the membership could not be set up: ${e instanceof Error ? e.message : "unknown error"}. You can do it from the Membership screen.`);
       }
     }
     if (couponUsed) {
@@ -1318,6 +1373,8 @@ export default function POSBilling() {
     setCouponInput("");
     setCouponMsg(null);
     setMshipApplied(null);
+    setPendingEnroll(null);
+    setMshipRemoved(null);
     setUpiVia("");
     setLinkSent(false);
     setPointsToUse(0);
@@ -1683,6 +1740,10 @@ export default function POSBilling() {
   const otherDiscountBills = analyticsFilteredOrders.filter((o) => !o.memberNo && slotOf(o) > 0);
   const otherDiscountTotal = otherDiscountBills.reduce((a, o) => a + slotOf(o), 0);
   const memberActive = mship.members.filter((m) => !m.off && !(m.expiresAt && m.expiresAt < new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }))).length;
+
+  const salesBills: SalesBill[] = analyticsFilteredOrders.map((o) => ({
+    phone: (o.customerPhone || "").replace(/\D/g, "").slice(-10), total: o.grandTotal, discount: o.discount, memberNo: o.memberNo ?? null, loyaltyDiscount: o.loyaltyDiscount ?? 0,
+  }));
 
   // GST invoices vs non-GST bills
   const gstOrdersList = analyticsFilteredOrders.filter(isGstOrder);
@@ -2603,20 +2664,28 @@ export default function POSBilling() {
                     name={customerName}
                     members={mship.members}
                     plans={mship.plans}
+                    basis={mship.settings.basis}
+                    bills={billRows}
+                    billSubtotal={subtotal}
+                    billDiscount={calculatedDiscount}
                     applied={memberDiscountOn}
+                    pending={pendingEnroll}
+                    onPending={setPendingEnroll}
                     onApply={(m, pct) => {
                       setDiscountType("percent");
                       setDiscountValue(pct);
                       setSelectedCoupon("none");
                       setCouponInput("");
                       setCouponMsg(null);
+                      setMshipRemoved(null);
                       setMshipApplied({ memberNo: m.memberNo, plan: m.planName, pct, phone: m.phone });
                     }}
                     onRemove={() => {
                       setDiscountValue(0);
                       setMshipApplied(null);
+                      setMshipRemoved(customerPhone);
                     }}
-                    onRegistered={(m, delta) => setMship((d) => applyResult(d, { member: m, revenueDelta: delta }))}
+                    onRegistered={(r) => setMship((d) => applyResult(d, r))}
                   />
                 </div>
 
@@ -3250,6 +3319,12 @@ export default function POSBilling() {
                           placeholder="0"
                         />
                       </div>
+                      {membershipFee > 0 && (
+                        <div className="flex justify-between items-center text-[13px] font-semibold">
+                          <span className="text-[#000000]">Membership fee · {pendingEnroll?.planName}</span>
+                          <span className="font-mono font-bold text-[#000000]">₹{membershipFee.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Non-GST bill / GST invoice */}
@@ -3564,7 +3639,7 @@ export default function POSBilling() {
         {role === "admin" && activeTab === "expenses" && <ExpensesPanel />}
         {role === "admin" && activeTab === "settings" && <SettingsPanel />}
         {activeTab === "loyalty" && <LoyaltyPanel admin={role === "admin"} />}
-        {activeTab === "membership" && <MembershipPanel shop={shopProfile.shopName} admin={role === "admin"} data={mship} setData={setMship} />}
+        {activeTab === "membership" && <MembershipPanel shop={shopProfile.shopName} admin={role === "admin"} data={mship} setData={setMship} bills={billRows} />}
 
         {role === "admin" && activeTab === "orders" && (
           <div className="flex-1 flex flex-col max-w-[1400px] mx-auto w-full pb-8 pr-2 animate-in fade-in duration-300">
@@ -4357,6 +4432,8 @@ export default function POSBilling() {
                   Membership fees collected so far: <b>₹{inr2(mship.revenue)}</b> ({mship.members.length} member{mship.members.length === 1 ? "" : "s"} in total). Each discount is counted once, under where it came from.
                 </p>
 
+                <MembershipAnalytics data={mship} allBills={billRows} salesBills={salesBills} />
+
                 {/* Main Charts & Breakdowns */}
                 <div className="flex flex-col lg:grid lg:grid-cols-12 gap-6">
                   {/* Left Chart Column */}
@@ -5049,6 +5126,7 @@ export default function POSBilling() {
           setSaleCompletedPrompt(null);
           setShowPromptPhoneInput(false);
           setSavedLoyaltyNote("");
+          setSavedMembershipMsg(null);
         };
         const row = "flex items-center justify-between gap-4 text-[14px]";
         return (
@@ -5120,6 +5198,21 @@ export default function POSBilling() {
                       <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-[12.5px] font-semibold text-emerald-800">
                         ⭐ {savedLoyaltyNote}
                       </div>
+                    )}
+                    {savedMembershipMsg && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const msg = savedMembershipMsg;
+                          const w = window.open(waLink(msg.phone, msg.text), "_blank", "noopener,noreferrer");
+                          markMessageAction(msg.id, w ? "sent" : "failed").catch(() => {});
+                          setMship((d) => ({ ...d, messages: d.messages.map((x) => (x.id === msg.id ? { ...x, status: w ? "sent" : "failed" } : x)) }));
+                          setSavedMembershipMsg(null);
+                        }}
+                        className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#10B981] px-4 py-3 text-[12.5px] font-extrabold uppercase tracking-wide text-white hover:bg-[#059669]"
+                      >
+                        <MessageCircle className="h-4 w-4" /> Send the membership message on WhatsApp
+                      </button>
                     )}
                   </div>
                 </div>

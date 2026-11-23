@@ -143,6 +143,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
             <p className="mt-1.5 text-[15px] font-bold text-black">{order.customer_name || "Guest"}</p>
             {phone && <p className="font-mono text-[12.5px] text-slate-600">+91 {phone}</p>}
             {order.member_no && <p className="mt-0.5 text-[12px] font-semibold text-[#C1272D]">Member {order.member_no}{order.member_plan ? ` · ${order.member_plan}` : ""}</p>}
+            {order.member_event && <p className="mt-0.5 text-[12px] font-semibold text-emerald-700">🎉 Membership: {order.member_event}{order.member_event_no ? ` · ${order.member_event_no}` : ""}</p>}
           </div>
           <div className="text-right">
             <p className={lab}>Place of supply</p>
@@ -226,6 +227,12 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
               {order.delivery_fee > 0 && (
                 <div className="flex justify-between"><span className="text-slate-700">Delivery</span><span className="font-mono font-semibold text-black">{money(order.delivery_fee)}</span></div>
               )}
+              {(order.membership_fee ?? 0) > 0 && (
+                <div className="flex justify-between"><span className="text-slate-700">Membership fee{order.member_event ? ` · ${order.member_event}` : ""}</span><span className="font-mono font-semibold text-black">{money(order.membership_fee ?? 0)}</span></div>
+              )}
+              {order.member_offer && (
+                <div className="flex justify-between gap-3"><span className="text-slate-700">Member offer</span><span className="text-right text-[12px] font-semibold text-emerald-700">{order.member_offer}</span></div>
+              )}
               {gstItem ? (
                 <>
                   <div className="flex justify-between"><span className="text-slate-700">CGST ({halfPct}%)</span><span className="font-mono font-semibold text-black">{money(cgst)}</span></div>
@@ -273,6 +280,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
         <p>{when}</p>
         <p>{order.customer_name || "Walk-in customer"}{phone ? ` · +91 ${phone}` : ""}</p>
         {order.member_no && <p>Member {order.member_no}{order.member_plan ? ` · ${order.member_plan}` : ""}</p>}
+        {order.member_event && <p>Membership: {order.member_event}{order.member_event_no ? ` · ${order.member_event_no}` : ""}</p>}
         <hr />
         {lines.map((item, i) => (
           <div key={i} className="rc-item">
@@ -285,6 +293,8 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
         {slotDisc > 0 && <div className="rc-row"><span>{order.member_no ? "Member discount" : "Discount"}{slotPct}</span><span>− {money(slotDisc)}</span></div>}
         {loyDisc > 0 && <div className="rc-row"><span>Loyalty points{loyalty?.used ? ` (${loyalty.used} pts)` : ""}</span><span>− {money(loyDisc)}</span></div>}
         {order.delivery_fee > 0 && <div className="rc-row"><span>Delivery</span><span>{money(order.delivery_fee)}</span></div>}
+        {(order.membership_fee ?? 0) > 0 && <div className="rc-row"><span>Membership fee</span><span>{money(order.membership_fee ?? 0)}</span></div>}
+        {order.member_offer && <p>Member offer: {order.member_offer}</p>}
         {gstItem ? (
           <>
             <div className="rc-row"><span>CGST ({halfPct}%)</span><span>{money(cgst)}</span></div>
