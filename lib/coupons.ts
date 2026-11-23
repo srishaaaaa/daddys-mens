@@ -14,6 +14,7 @@ const map = (r: any): Coupon => ({
   used: Number(r.used ?? 0),
   active: r.active ?? true,
   restricted: r.restricted ?? false,
+  audience: (["all", "regular", "loyalty"].includes(r.audience) ? r.audience : "all") as Coupon["audience"],
   phones: Array.isArray(r.phones) ? r.phones : [],
   sent: Number(r.sent ?? 0),
 });
@@ -39,6 +40,7 @@ export async function saveCoupon(input: CouponInput): Promise<Coupon> {
     usage_limit: input.limit && input.limit > 0 ? Math.floor(input.limit) : null,
     active: input.active,
     restricted: input.restricted,
+    audience: (["all", "regular", "loyalty"].includes(input.audience) ? input.audience : "all"),
   };
   const q = input.id
     ? sb.from("coupons").update(row).eq("id", input.id)
@@ -89,6 +91,12 @@ export async function validateCoupon(
   if (st === "expired") return { ok: false, reason: `${c.code} has expired.` };
   if (st === "exhausted") return { ok: false, reason: `${c.code} has been fully used.` };
   if (c.minOrder > 0 && subtotal < c.minOrder) return { ok: false, reason: `${c.code} needs a minimum order of ₹${c.minOrder}.` };
+  if (c.audience !== "all") {
+    const p = tenDigits(phone);
+    const { data: m } = p.length === 10 ? await sb.from("loyalty_customers").select("id").eq("phone", p).eq("status", "active").maybeSingle() : { data: null };
+    if (c.audience === "loyalty" && !m) return { ok: false, reason: `${c.code} is only for loyalty members.` };
+    if (c.audience === "regular" && m) return { ok: false, reason: `${c.code} is only for customers who are not loyalty members.` };
+  }
   if (c.restricted && !c.phones.includes(tenDigits(phone))) return { ok: false, reason: `${c.code} only works for the customers it was sent to.` };
   return { ok: true, code: c.code, percent: c.percent };
 }
@@ -116,4 +124,26 @@ export async function getPublicCoupon(rawCode: string) {
     expiresAt: c.expiresAt,
     status: couponStatus(c),
   };
+}
+
+export type CouponRecipient = { phone: string; name: string; member: boolean };
+
+/** Who a coupon can be sent to in one go: loyalty members, customers from past bills who are not members, or both. */
+export async function listCouponRecipients(scope: "members" | "nonMembers" | "everyone"): Promise<CouponRecipient[]> {
+  const out = new Map<string, CouponRecipient>();
+  const { data: mem } = await sb.from("loyalty_customers").select("phone, name, status").eq("status", "active");
+  const memberPhones = new Set<string>();
+  for (const m of (mem ?? []) as any[]) {
+    memberPhones.add(m.phone);
+    if (scope !== "nonMembers") out.set(m.phone, { phone: m.phone, name: m.name ?? "", member: true });
+  }
+  if (scope !== "members") {
+    const { data: ord } = await sb.from("orders").select("customer_phone, customer_name, created_at").order("created_at", { ascending: false }).limit(5000);
+    for (const o of (ord ?? []) as any[]) {
+      const p = tenDigits(String(o.customer_phone ?? "").split("_")[0]);
+      if (p.length !== 10 || memberPhones.has(p) || out.has(p)) continue;
+      out.set(p, { phone: p, name: o.customer_name && o.customer_name !== "Guest" ? o.customer_name : "", member: false });
+    }
+  }
+  return [...out.values()];
 }

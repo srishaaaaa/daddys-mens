@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Check, Copy, Download } from "lucide-react";
+import { drawCouponCanvas } from "@/lib/couponImage";
 
 type PublicCoupon = {
   code: string;
@@ -48,90 +49,7 @@ export default function CouponCard({ coupon: c, customerName }: { coupon: Public
 
   // Draws the coupon onto a canvas and downloads it as a PNG.
   const saveImage = async () => {
-    try {
-      await document.fonts?.load("700 40px Poppins");
-    } catch {}
-    const W = 1080;
-    const H = 1350;
-    const cv = document.createElement("canvas");
-    cv.width = W;
-    cv.height = H;
-    const g = cv.getContext("2d");
-    if (!g) return;
-    const font = (w: number, s: number) => `${w} ${s}px Poppins, Arial, sans-serif`;
-    const rr = (x: number, y: number, w: number, h: number, r: number) => {
-      g.beginPath();
-      g.roundRect(x, y, w, h, r);
-    };
-
-    const bg = g.createLinearGradient(0, 0, 0, H);
-    bg.addColorStop(0, "#3A0B0E");
-    bg.addColorStop(1, "#1A0405");
-    g.fillStyle = bg;
-    g.fillRect(0, 0, W, H);
-
-    g.textAlign = "center";
-    g.fillStyle = "#F5EFE6";
-    g.font = font(800, 56);
-    g.fillText("DADDY'S HOME", W / 2, 120);
-    g.fillStyle = "#D9B26A";
-    g.font = font(600, 26);
-    g.fillText("PREMIUM MENSWEAR & ACCESSORIES", W / 2, 168);
-
-    // card
-    const x = 90;
-    const y = 230;
-    const w = W - 180;
-    const h = 900;
-    g.save();
-    rr(x, y, w, h, 44);
-    g.clip();
-    g.fillStyle = "#FAF7F2";
-    g.fillRect(x, y, w, h);
-    const head = g.createLinearGradient(x, y, x + w, y + 380);
-    head.addColorStop(0, "#C1272D");
-    head.addColorStop(1, "#8E1B20");
-    g.fillStyle = head;
-    g.fillRect(x, y, w, 380);
-    g.restore();
-
-    g.fillStyle = "#F3D8A0";
-    g.font = font(700, 28);
-    g.fillText("A GIFT FOR YOU", W / 2, y + 90);
-    g.fillStyle = "#FFFFFF";
-    g.font = font(800, 150);
-    g.fillText(`${c.percent}% OFF`, W / 2, y + 245);
-    g.fillStyle = "#FBE9E9";
-    g.font = font(500, 32);
-    g.fillText("on your next purchase", W / 2, y + 310);
-
-    g.fillStyle = "#9B7A3A";
-    g.font = font(700, 26);
-    g.fillText("YOUR COUPON CODE", W / 2, y + 450);
-    rr(x + 60, y + 480, w - 120, 130, 26);
-    g.fillStyle = "#FFFFFF";
-    g.fill();
-    g.strokeStyle = "#D9B26A";
-    g.lineWidth = 3;
-    g.stroke();
-    g.fillStyle = "#3A0B0E";
-    g.font = `700 76px "Courier New", monospace`;
-    g.fillText(c.code, W / 2, y + 570);
-
-    g.textAlign = "left";
-    g.font = font(500, 32);
-    rules.forEach((r, i) => {
-      g.fillStyle = "#C1272D";
-      g.fillText("•", x + 80, y + 700 + i * 70);
-      g.fillStyle = "#4A4038";
-      g.fillText(r, x + 130, y + 700 + i * 70);
-    });
-
-    g.textAlign = "center";
-    g.fillStyle = "#E7D9C3";
-    g.font = font(500, 28);
-    g.fillText(`Show this code at the store or enter it at checkout. · ${PHONE}`, W / 2, y + h + 90);
-
+    const cv = await drawCouponCanvas({ code: c.code, percent: c.percent, minOrder: c.minOrder, expiresAt: c.expiresAt, customerName });
     const a = document.createElement("a");
     a.href = cv.toDataURL("image/png");
     a.download = `coupon-${c.code}.png`;

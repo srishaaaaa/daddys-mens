@@ -77,6 +77,14 @@ export async function loyaltySettleAction(input: SettleInput) {
   const role = await requireStaff();
   return L.settleOrder(input, actorOf(role));
 }
+export async function listBillOffersAction() {
+  await requireStaff();
+  return L.listLiveOffers();
+}
+export async function recordOffersGivenAction(given: { offerId: string; qty: number }[]) {
+  await requireStaff();
+  return L.recordOffersGiven(given);
+}
 export async function suggestCustomersAction(q: string) {
   await requireStaff();
   return L.suggestCustomers(q);

@@ -20,6 +20,8 @@ export type InventoryItem = {
   offer_discount_pct: number;
   offer_price: number | null;
   is_active: boolean;
+  /** small JPEG data URL, or null */
+  image_url: string | null;
 };
 
 export type InventoryInput = Omit<InventoryItem, "id">;
@@ -41,7 +43,7 @@ const num = (v: unknown) => Number(v ?? 0);
 const numOrNull = (v: unknown) => (v === null || v === undefined ? null : Number(v));
 
 const COLS =
-  "id, name, description, category, item_type, default_price, cost_price, current_stock, low_stock_alert, offer_discount_pct, offer_price, is_active";
+  "id, name, description, category, item_type, default_price, cost_price, current_stock, low_stock_alert, offer_discount_pct, offer_price, is_active, image_url";
 
 const mapItem = (r: any): InventoryItem => ({
   id: r.id,
@@ -56,6 +58,7 @@ const mapItem = (r: any): InventoryItem => ({
   offer_discount_pct: num(r.offer_discount_pct),
   offer_price: numOrNull(r.offer_price),
   is_active: r.is_active ?? true,
+  image_url: r.image_url ?? null,
 });
 
 const toRow = (i: InventoryInput) => {
@@ -72,6 +75,7 @@ const toRow = (i: InventoryInput) => {
     offer_discount_pct: i.offer_discount_pct,
     offer_price: i.offer_price,
     is_active: i.is_active,
+    image_url: i.image_url && i.image_url.startsWith("data:image/") && i.image_url.length < 400_000 ? i.image_url : null,
   };
 };
 

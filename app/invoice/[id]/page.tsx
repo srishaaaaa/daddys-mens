@@ -162,6 +162,18 @@ export default async function InvoicePage({
                       : order.customer_phone.split("_")[1]
                     : "CASH"}
                 </span>
+                {(order.split_cash ?? 0) + (order.split_upi ?? 0) + (order.split_card ?? 0) > 0 && (
+                  <span className="text-[#6B5F52] font-semibold text-xs self-center">
+                    ·{" "}
+                    {[
+                      order.split_cash ? `Cash ₹${order.split_cash}` : "",
+                      order.split_upi ? `UPI ₹${order.split_upi}` : "",
+                      order.split_card ? `Card ₹${order.split_card}` : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" + ")}
+                  </span>
+                )}
                 {order.upi_channel && UPI_CHANNEL_LABELS[order.upi_channel] && (
                   <span className="text-[#6B5F52] font-semibold text-xs self-center">
                     · {UPI_CHANNEL_LABELS[order.upi_channel]}

@@ -4,6 +4,7 @@ import { supabaseAdmin as sb } from "@/lib/supabase";
 import { DEFAULT_CONFIG, sanitizeConfig, type LoyaltyConfig, type MessageKey } from "./config";
 import { earnFor, pointsValue, segmentOf, statsFrom } from "./engine";
 import { fillMessage } from "./messages";
+import { offerLive } from "./gifts";
 import type {
   Audit, GiftOffer, LedgerEntry, LoyaltyCustomer, LoyaltyLookup, LoyaltyMessage, LoyaltyState,
   PurchaseStats, Reward, Segment, Voucher, VoucherSource,
@@ -481,4 +482,24 @@ export async function suggestCustomers(q: string): Promise<CustomerSuggestion[]>
   return [...out.values()]
     .sort((a, b) => Number(b.phone.startsWith(digits)) - Number(a.phone.startsWith(digits)) || a.phone.localeCompare(b.phone))
     .slice(0, 8);
+}
+
+
+/* ---------------------------------------------------------------- bill offers (for any customer) */
+/** The shop's live offers on the bill. Billing works out which of them a bill qualifies for. */
+export async function listLiveOffers(): Promise<GiftOffer[]> {
+  const cfg = await getConfig();
+  if (!cfg.enabled || !cfg.gifts.offers) return [];
+  const { data } = await sb.from("loyalty_offers").select("*");
+  return (data ?? []).map((r: any) => docOf<GiftOffer>(r)).filter((o) => offerLive(o));
+}
+
+/** Counts gifts handed over through offers, so offers with a total limit run out. */
+export async function recordOffersGiven(given: { offerId: string; qty: number }[]) {
+  for (const g of given) {
+    const { data } = await sb.from("loyalty_offers").select("data").eq("id", g.offerId).maybeSingle();
+    if (!data) continue;
+    const doc = data.data as GiftOffer;
+    await sb.from("loyalty_offers").update({ data: { ...doc, given: (doc.given ?? 0) + Math.max(0, Math.round(g.qty)) } }).eq("id", g.offerId);
+  }
 }

@@ -36,6 +36,7 @@ import {
   updateInventoryItemAction,
 } from "@/app/pos/inventory-actions";
 import StockMovementsPanel from "./StockMovementsPanel";
+import { productImageToDataUrl } from "@/lib/imageUpload";
 
 // Same shape the reference POS uses for a catalogue row.
 type CatalogItem = {
@@ -51,6 +52,7 @@ type CatalogItem = {
   offerPct?: number;
   offerPrice?: number | null;
   isActive?: boolean;
+  imageUrl?: string | null;
 };
 
 const toCatalogItem = (p: InventoryItem): CatalogItem => ({
@@ -66,6 +68,7 @@ const toCatalogItem = (p: InventoryItem): CatalogItem => ({
   offerPct: p.offer_discount_pct,
   offerPrice: p.offer_price,
   isActive: p.is_active,
+  imageUrl: p.image_url,
 });
 
 type NumField = number | "";
@@ -124,6 +127,7 @@ export default function InventoryPanel() {
   const [newCatOfferPct, setNewCatOfferPct] = useState<NumField>("");
   const [newCatOfferPrice, setNewCatOfferPrice] = useState<NumField>("");
   const [newCatActive, setNewCatActive] = useState(true);
+  const [newCatImage, setNewCatImage] = useState<string | null>(null);
 
   const resetCatalogForm = () => {
     setNewCatName("");
@@ -137,6 +141,7 @@ export default function InventoryPanel() {
     setNewCatOfferPct("");
     setNewCatOfferPrice("");
     setNewCatActive(true);
+    setNewCatImage(null);
   };
 
   const openEditCatalog = (catItem: CatalogItem) => {
@@ -152,6 +157,7 @@ export default function InventoryPanel() {
     setNewCatOfferPct(catItem.offerPct && catItem.offerPct > 0 ? catItem.offerPct : "");
     setNewCatOfferPrice(catItem.offerPrice ?? "");
     setNewCatActive(catItem.isActive === undefined ? true : catItem.isActive);
+    setNewCatImage(catItem.imageUrl ?? null);
     setShowCatalogModal(true);
   };
 
@@ -220,6 +226,7 @@ export default function InventoryPanel() {
       offer_discount_pct: offerPct,
       offer_price: offerPrice,
       is_active: newCatActive,
+      image_url: newCatImage,
     };
 
     if (isSavingCatalog) return; // ignore double-clicks
@@ -592,6 +599,10 @@ export default function InventoryPanel() {
                                     }`}
                                   />
                                 </button>
+                                {p.imageUrl && (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img src={p.imageUrl} alt="" className="w-10 h-10 rounded-md object-cover border border-black/10 shrink-0" />
+                                )}
                                 <div className="flex-1 min-w-0">
                                   <div className="text-sm font-bold text-[#000000] flex items-center gap-2 flex-wrap">
                                     <span>{p.name}</span>
@@ -1189,6 +1200,47 @@ export default function InventoryPanel() {
                   onChange={(e) => setNewCatName(e.target.value)}
                   autoFocus
                 />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-gray-600 uppercase tracking-widest mb-1.5">
+                  Photo (Optional)
+                </label>
+                <div className="flex items-center gap-3">
+                  <div className="w-16 h-16 rounded-lg border border-gray-200 bg-gray-50 overflow-hidden flex items-center justify-center shrink-0">
+                    {newCatImage ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={newCatImage} alt="Product" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-[9px] font-bold text-gray-400 uppercase">No photo</span>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="inline-block text-[10px] font-bold uppercase tracking-widest px-3 py-2 rounded-lg border border-gray-200 bg-white hover:border-gray-300 cursor-pointer">
+                      {newCatImage ? "Change photo" : "Upload photo"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          e.target.value = "";
+                          if (!file) return;
+                          try {
+                            setNewCatImage(await productImageToDataUrl(file));
+                          } catch (err) {
+                            alert(err instanceof Error ? err.message : "Could not use that image.");
+                          }
+                        }}
+                      />
+                    </label>
+                    {newCatImage && (
+                      <button type="button" onClick={() => setNewCatImage(null)} className="text-[10px] font-bold uppercase tracking-widest text-gray-500 hover:text-red-600 text-left cursor-pointer">
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
 
               <div>

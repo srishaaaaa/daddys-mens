@@ -46,10 +46,12 @@ import InventoryPanel from "./InventoryPanel";
 import CouponsPanel from "./CouponsPanel";
 import LoyaltyPanel from "./LoyaltyPanel";
 import ExpensesPanel from "./ExpensesPanel";
+import { listExpensesAction } from "@/app/pos/expense-actions";
 import SettingsPanel from "./SettingsPanel";
-import { loyaltyLookupAction, loyaltyRegisterAction, loyaltySettleAction } from "@/app/pos/loyalty-actions";
+import { listBillOffersAction, loyaltyLookupAction, loyaltyRegisterAction, loyaltySettleAction, recordOffersGivenAction } from "@/app/pos/loyalty-actions";
+import { offerEntitlements } from "@/lib/loyalty/gifts";
 import { pointsValue, redeemCap } from "@/lib/loyalty/engine";
-import type { LoyaltyLookup } from "@/lib/loyalty/types";
+import type { GiftOffer, LoyaltyLookup } from "@/lib/loyalty/types";
 import { suggestCustomersAction } from "@/app/pos/loyalty-actions";
 import { UpiQrCard } from "@/app/_components/UpiQrCard";
 import { createPayLinkAction, getUpiConfigAction } from "@/app/pos/pay-actions";
@@ -78,6 +80,7 @@ const UPI_CHANNELS = [
 
 type CatalogItem = {
   id: string;
+  imageUrl?: string | null;
   name: string;
   desc?: string;
   price?: number;
@@ -107,7 +110,7 @@ type CompletedOrder = {
   deliveryFee: number;
   grandTotal: number;
   cashReceived: number;
-  paymentMethod?: "CASH" | "CARD" | "GPAY";
+  paymentMethod?: "CASH" | "CARD" | "GPAY" | "SPLIT";
   date: string;
   status: "Completed" | "Pending";
 };
@@ -292,14 +295,22 @@ const SearchableItemInput = ({
                     }}
                     onMouseEnter={() => setSelectedIndex(idx)}
                   >
-                    <div className="text-sm font-bold text-[#000000]">
-                      {catItem.name}
-                    </div>
-                    {catItem.desc && (
-                      <div className="text-[11px] font-semibold uppercase tracking-wider text-[#000000] mt-1">
-                        {catItem.desc}
+                    <div className="flex items-center gap-3">
+                      {catItem.imageUrl && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={catItem.imageUrl} alt="" className="w-10 h-10 rounded-md object-cover border border-black/10 shrink-0" />
+                      )}
+                      <div className="min-w-0">
+                        <div className="text-sm font-bold text-[#000000]">
+                          {catItem.name}
+                        </div>
+                        {catItem.desc && (
+                          <div className="text-[11px] font-semibold uppercase tracking-wider text-[#000000] mt-1">
+                            {catItem.desc}
+                          </div>
+                        )}
                       </div>
-                    )}
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -355,17 +366,23 @@ export default function POSBilling() {
     "fixed",
   );
   const [deliveryFee, setDeliveryFee] = useState<number>(0);
-  const [paymentMethod, setPaymentMethod] = useState<"CASH" | "CARD" | "GPAY">("CASH");
+  const [paymentMethod, setPaymentMethod] = useState<"CASH" | "CARD" | "GPAY" | "SPLIT">("CASH");
   // UPI: the shop's details come from .env; the channel records how the payment reached the shop.
   const [upiCfg, setUpiCfg] = useState<{ id: string; name: string; phone: string; minutes: number; shopName: string } | null>(null);
   const [upiVia, setUpiVia] = useState<string>("");
   const [linkSent, setLinkSent] = useState(false);
+  // Split payment: any mix of cash, UPI and card that adds up to the bill.
+  const [splitCash, setSplitCash] = useState<number | "">("");
+  const [splitUpi, setSplitUpi] = useState<number | "">("");
+  const [splitCard, setSplitCard] = useState<number | "">("");
 
   // Loyalty: the member for the phone typed in billing, points being used, gifts handed over.
   const [member, setMember] = useState<(LoyaltyLookup & { products: { id: string; name: string; category: string }[] }) | null>(null);
   const [pointsToUse, setPointsToUse] = useState(0);
   const [claimedVouchers, setClaimedVouchers] = useState<string[]>([]);
   const [enrolling, setEnrolling] = useState(false);
+  const [billOffers, setBillOffers] = useState<GiftOffer[]>([]);
+  const [addedOffers, setAddedOffers] = useState<string[]>([]);
   const [savedLoyaltyNote, setSavedLoyaltyNote] = useState("");
 
   const refreshMember = async (phone: string) => {
@@ -418,6 +435,8 @@ export default function POSBilling() {
   const [activeInvoiceId, setActiveInvoiceId] = useState<string | null>(null);
 
   // Analytics filter/navigation states
+  // Expense amounts and dates, for Net Profit on the dashboard (admin only; empty for staff).
+  const [expenseRows, setExpenseRows] = useState<{ amount: number; date: string }[]>([]);
   const [analyticsPeriod, setAnalyticsPeriod] = useState<
     "all" | "today" | "week" | "month" | "year" | "custom"
   >("all");
@@ -507,11 +526,16 @@ export default function POSBilling() {
           id: p.id,
           name: p.name,
           desc: p.description,
+          imageUrl: p.image_url ?? null,
           price: p.default_price || undefined,
         })),
       );
 
       getUpiConfigAction().then(setUpiCfg).catch(() => {});
+      listBillOffersAction().then(setBillOffers).catch(() => {});
+      listExpensesAction()
+        .then((rows) => setExpenseRows(rows.map((e) => ({ amount: e.amount, date: e.expense_date }))))
+        .catch(() => {});
       // Coupons are admin-managed; staff just won't get the list (billing validates server-side).
       listCouponsAction().then(setDbCoupons).catch(() => {});
 
@@ -519,12 +543,12 @@ export default function POSBilling() {
       setOrders(
         ordersData.map((o) => {
           let phone = o.customer_phone || "";
-          let method: "CASH" | "CARD" | "GPAY" = "CASH";
+          let method: "CASH" | "CARD" | "GPAY" | "SPLIT" = "CASH";
           if (phone.includes("_")) {
             const parts = phone.split("_");
             phone = parts[0];
             const pm = parts[1];
-            if (pm === "CARD" || pm === "GPAY") {
+            if (pm === "CARD" || pm === "GPAY" || pm === "SPLIT") {
               method = pm;
             }
           }
@@ -823,6 +847,16 @@ export default function POSBilling() {
   const loyaltyPoints = loyaltyCap && loyaltyCap.maxPoints > 0 && pointsToUse >= loyaltyCap.minPoints ? Math.min(pointsToUse, loyaltyCap.maxPoints) : 0;
   const loyaltyDiscount = member?.customer && loyaltyPoints > 0 ? pointsValue(loyaltyPoints, member.config) : 0;
   const calculatedDiscount = Math.min(subtotal, manualDiscount + loyaltyDiscount);
+
+  // Bill offers (work for any customer): which ones this bill qualifies for right now.
+  const offerEntitled = (() => {
+    if (!billOffers.length) return [];
+    const lines = items
+      .filter((i) => i.name && i.price > 0 && i.desc !== "FREE GIFT")
+      .map((i) => ({ productId: catalog.find((c) => c.name.toLowerCase() === i.name.toLowerCase())?.id ?? null, name: i.name, price: i.price, qty: i.qty }));
+    const paid = Math.max(0, subtotal - calculatedDiscount);
+    return offerEntitlements(billOffers, lines, paid, Date.now(), !!member?.customer);
+  })();
   const afterDiscount = Math.max(0, subtotal - calculatedDiscount);
   const gstAmount = applyGST ? afterDiscount * (gstPercentage / 100) : 0;
   const grandTotal = afterDiscount + gstAmount + deliveryFee;
@@ -866,7 +900,7 @@ export default function POSBilling() {
     gstPercentage: number;
     gstAmount: number;
     grandTotal: number;
-    paymentMethod?: "CASH" | "CARD" | "GPAY";
+    paymentMethod?: "CASH" | "CARD" | "GPAY" | "SPLIT";
   };
 
   // Validates the current cart, writes the order to the database, updates local
@@ -879,12 +913,32 @@ export default function POSBilling() {
         !i.name ||
         i.name.trim() === "" ||
         i.price === undefined ||
-        i.price <= 0,
+        (i.price <= 0 && i.desc !== "FREE GIFT"),
     );
     if (hasInvalidItem || items.length === 0) {
       alert(
         "Please ensure all items have a valid name and a price greater than 0. Remove any empty rows before proceeding.",
       );
+      return null;
+    }
+
+    if (paymentMethod === "SPLIT") {
+      const parts = [Number(splitCash) || 0, Number(splitUpi) || 0, Number(splitCard) || 0];
+      if (parts.filter((n) => n > 0).length < 2) {
+        alert("Split payment: enter amounts for at least two of cash, UPI and card.");
+        return null;
+      }
+      if (Math.abs(parts[0] + parts[1] + parts[2] - grandTotal) > 0.009) {
+        alert(`Split payment: the parts add up to ₹${(parts[0] + parts[1] + parts[2]).toFixed(2)} but the bill is ₹${grandTotal.toFixed(2)}.`);
+        return null;
+      }
+    }
+
+    // A free offer gift only stays if the bill still qualifies for it (the bill may have changed since it was added).
+    const stillEntitled = new Set(offerEntitled.map((e) => e.key));
+    const lostOffer = addedOffers.find((k) => !stillEntitled.has(k));
+    if (lostOffer) {
+      alert("This bill no longer qualifies for the free gift offer that was added. Remove the free item or restore the bill.");
       return null;
     }
 
@@ -905,7 +959,7 @@ export default function POSBilling() {
     };
 
     const phoneToSave = customerPhone ? `${customerPhone}_${paymentMethod}` : `_${paymentMethod}`;
-    const actualCashReceived = paymentMethod === "CASH" ? cashReceived : grandTotal;
+    const actualCashReceived = paymentMethod === "CASH" ? cashReceived : paymentMethod === "SPLIT" ? Number(splitCash) || 0 : grandTotal;
 
     // The subtotal may have changed since the coupon was applied — check it again.
     const couponUsed = selectedCoupon !== "none" ? selectedCoupon : null;
@@ -932,7 +986,10 @@ export default function POSBilling() {
         grand_total: grandTotal,
         cash_received: actualCashReceived,
         created_at: createdAt,
-        upi_channel: paymentMethod === "GPAY" ? upiVia || defaultUpiVia : null,
+        upi_channel: paymentMethod === "GPAY" || (paymentMethod === "SPLIT" && Number(splitUpi) > 0) ? upiVia || defaultUpiVia : null,
+        split_cash: paymentMethod === "SPLIT" ? Number(splitCash) || 0 : 0,
+        split_upi: paymentMethod === "SPLIT" ? Number(splitUpi) || 0 : 0,
+        split_card: paymentMethod === "SPLIT" ? Number(splitCard) || 0 : 0,
         order_items: [
           ...itemsToSave.map((i) => ({
             snapshot_name: i.name,
@@ -956,6 +1013,11 @@ export default function POSBilling() {
       console.error("Error saving order:", err);
       alert("Could not save this order. Please check your connection and try again.");
       return null;
+    }
+    if (addedOffers.length > 0) {
+      recordOffersGivenAction(
+        offerEntitled.filter((e) => addedOffers.includes(e.key)).map((e) => ({ offerId: e.key.replace(/^offer:/, ""), qty: e.qty })),
+      ).catch(() => {});
     }
     if (member?.customer) {
       const settled = await loyaltySettleAction({
@@ -1025,6 +1087,10 @@ export default function POSBilling() {
     setPointsToUse(0);
     setClaimedVouchers([]);
     setMember(null);
+    setSplitCash("");
+    setSplitUpi("");
+    setSplitCard("");
+    setAddedOffers([]);
 
     return snapshot;
   };
@@ -1135,7 +1201,7 @@ export default function POSBilling() {
     
     if (snap.paymentMethod) {
       const modeEmoji = snap.paymentMethod === "CASH" ? "💵" : snap.paymentMethod === "CARD" ? "💳" : "📱";
-      const modeText = snap.paymentMethod === "GPAY" ? "GPay (UPI)" : snap.paymentMethod === "CARD" ? "Card" : "Cash";
+      const modeText = snap.paymentMethod === "GPAY" ? "UPI" : snap.paymentMethod === "CARD" ? "Card" : snap.paymentMethod === "SPLIT" ? "Split" : "Cash";
       message += `${modeEmoji} *Payment Mode:* ${modeText}\n`;
     }
     message += `\n${receiptEmoji} View and download your detailed digital receipt here:\n${invoiceUrl}`;
@@ -1300,6 +1366,31 @@ export default function POSBilling() {
   );
   const avgOrderValue =
     totalOrdersCount > 0 ? totalRevenueAmount / totalOrdersCount : 0;
+
+  // Expenses in the same window as the dashboard period; Net Profit = revenue minus expenses.
+  const analyticsExpensesTotal = expenseRows
+    .filter((e) => {
+      const d = new Date(`${e.date}T00:00:00`);
+      const n = new Date();
+      if (analyticsPeriod === "today") return d.toDateString() === n.toDateString();
+      if (analyticsPeriod === "week") {
+        const start = new Date(n);
+        const dow = start.getDay();
+        start.setDate(start.getDate() + (dow === 0 ? -6 : 1 - dow));
+        start.setHours(0, 0, 0, 0);
+        return d >= start;
+      }
+      if (analyticsPeriod === "month") return d.getMonth() === n.getMonth() && d.getFullYear() === n.getFullYear();
+      if (analyticsPeriod === "year") return d.getFullYear() === n.getFullYear();
+      if (analyticsPeriod === "custom") {
+        const st = analyticsStartDate ? new Date(`${analyticsStartDate}T00:00:00`) : null;
+        const en = analyticsEndDate ? new Date(`${analyticsEndDate}T23:59:59.999`) : null;
+        return (!st || d >= st) && (!en || d <= en);
+      }
+      return true;
+    })
+    .reduce((acc, e) => acc + e.amount, 0);
+  const netProfitAmount = totalRevenueAmount - analyticsExpensesTotal;
 
   // Split channels
   const onlineOrders = analyticsFilteredOrders.filter(
@@ -2727,6 +2818,39 @@ export default function POSBilling() {
                       </div>
                     )}
 
+                    {/* Offers on the bill: shown when the bill qualifies, added with one tap */}
+                    {offerEntitled.length > 0 && (
+                      <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 space-y-2">
+                        <span className="block text-[10px] font-black uppercase tracking-wider text-amber-900">Offer on this bill</span>
+                        {offerEntitled.map((e) => {
+                          const prod = catalog.find((c) => c.id === e.productId);
+                          const added = addedOffers.includes(e.key);
+                          return (
+                            <div key={e.key} className="flex items-center justify-between gap-2 text-[11px]">
+                              <span className="font-semibold text-amber-950">
+                                {e.name}: free {e.qty} × {prod?.name ?? "item"}
+                              </span>
+                              <button
+                                type="button"
+                                disabled={added || !prod}
+                                onClick={() => {
+                                  if (!prod) return;
+                                  setItems((prev) => [
+                                    ...prev.filter((x) => x.name || x.price),
+                                    { id: Math.random().toString(), name: prod.name, desc: "FREE GIFT", price: 0, qty: e.qty },
+                                  ]);
+                                  setAddedOffers((a) => [...a, e.key]);
+                                }}
+                                className="px-2.5 py-1 rounded bg-amber-600 text-white text-[10px] font-bold uppercase tracking-wider hover:bg-amber-700 disabled:opacity-50 cursor-pointer"
+                              >
+                                {added ? "Added" : "Add free gift"}
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
                     {/* Manual Discount */}
                     <div>
                       <label className="block text-[10px] font-bold text-[#000000] uppercase tracking-[0.1em] mb-1.5">
@@ -2867,8 +2991,81 @@ export default function POSBilling() {
                         >
                           UPI
                         </button>
+                        <button
+                          onClick={() => setPaymentMethod("SPLIT")}
+                          className={`flex-1 flex items-center justify-center py-2 text-xs font-bold rounded-md transition-all ${paymentMethod === "SPLIT" ? "bg-white text-[#C1272D] shadow-sm" : "text-[#4A4038] hover:text-[#000000]"}`}
+                        >
+                          Split
+                        </button>
                       </div>
                     </div>
+
+                    {/* Split: any mix of cash, UPI and card; each box can take "the rest" in one tap */}
+                    {paymentMethod === "SPLIT" && (() => {
+                      const sc = Number(splitCash) || 0;
+                      const su = Number(splitUpi) || 0;
+                      const sd = Number(splitCard) || 0;
+                      const off = Math.round((grandTotal - sc - su - sd) * 100) / 100;
+                      const rows: [string, number | "", (v: number | "") => void, number][] = [
+                        ["Cash", splitCash, setSplitCash, sc],
+                        ["UPI", splitUpi, setSplitUpi, su],
+                        ["Card", splitCard, setSplitCard, sd],
+                      ];
+                      return (
+                        <div className="mt-2 space-y-2.5">
+                          <p className="text-[12px] text-[#4A4038]">Split ₹{grandTotal.toLocaleString("en-IN")} between cash, UPI and card.</p>
+                          {rows.map(([label, val, setter, cur]) => (
+                            <div key={label} className="flex items-center gap-2">
+                              <span className="w-12 text-[11px] font-bold uppercase tracking-wider text-[#6B5F52]">{label}</span>
+                              <input
+                                type="number"
+                                min={0}
+                                value={val}
+                                placeholder="0.00"
+                                onWheel={(e) => e.currentTarget.blur()}
+                                onChange={(e) => setter(e.target.value === "" ? "" : Math.max(0, parseFloat(e.target.value) || 0))}
+                                className="flex-1 min-w-0 bg-white border border-black/10 rounded-lg px-3 py-2 text-sm font-bold text-right focus:outline-none focus:border-[#C1272D]"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setter(Math.max(0, Math.round((cur + off) * 100) / 100))}
+                                className="px-2.5 py-2 rounded-lg bg-[#C1272D]/10 text-[#C1272D] text-[10px] font-bold uppercase hover:bg-[#C1272D]/20 cursor-pointer"
+                              >
+                                Rest
+                              </button>
+                            </div>
+                          ))}
+                          <div className={`flex justify-between rounded-lg px-3 py-2 text-xs font-bold ${Math.abs(off) < 0.01 ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`}>
+                            <span>{Math.abs(off) < 0.01 ? "Adds up to the bill" : off > 0 ? "Still to collect" : "Over the bill by"}</span>
+                            <span>₹{Math.abs(off).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+                          </div>
+                          {su > 0 && (
+                            <>
+                              <label className="block">
+                                <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-[#6B5F52]">UPI part came through</span>
+                                <select
+                                  className="h-11 w-full rounded-xl border border-black/15 bg-white px-4 text-sm font-semibold outline-none focus:border-[#C1272D] cursor-pointer"
+                                  value={upiVia || defaultUpiVia}
+                                  onChange={(e) => setUpiVia(e.target.value)}
+                                >
+                                  {UPI_CHANNELS.map((c) => (
+                                    <option key={c.key} value={c.key}>{c.label}</option>
+                                  ))}
+                                </select>
+                              </label>
+                              {upiCfg && (
+                                <UpiQrCard
+                                  upi={{ id: upiCfg.id, name: upiCfg.name, minutes: upiCfg.minutes, phone: upiCfg.phone }}
+                                  amount={su}
+                                  shop={upiCfg.shopName}
+                                  label="Scan to pay the UPI part:"
+                                />
+                              )}
+                            </>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {paymentMethod === "CASH" && (
                       <>
@@ -2960,7 +3157,7 @@ export default function POSBilling() {
                       </div>
                     )}
 
-                    {upiCfg && grandTotal > 0 && customerPhone.replace(/\D/g, "").length === 10 && (paymentMethod === "CASH" || paymentMethod === "GPAY") && (
+                    {upiCfg && grandTotal > 0 && customerPhone.replace(/\D/g, "").length === 10 && (paymentMethod === "CASH" || paymentMethod === "GPAY" || paymentMethod === "SPLIT") && (
                       <div className="mt-3 space-y-2 rounded-2xl border border-dashed border-[#6B5F52]/40 p-3">
                         <span className="block text-[10px] font-bold uppercase tracking-wider text-[#6B5F52]">
                           Ask the customer to pay by UPI
@@ -3739,6 +3936,40 @@ export default function POSBilling() {
                     </div>
                     <div className="text-[9px] text-[#000000] font-semibold">
                       POS + manual bills
+                    </div>
+                  </div>
+
+                  <div className="bg-white border border-black/10 rounded-xl p-4 shadow-sm hover:shadow-md transition-all">
+                    <div className="flex justify-between items-start mb-3">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#000000]">
+                        Total Expenses
+                      </span>
+                      <div className="w-6 h-6 rounded-full bg-[#B91C1C]/10 flex items-center justify-center">
+                        <IndianRupee className="w-3 h-3 text-[#B91C1C]" />
+                      </div>
+                    </div>
+                    <div className="text-xl font-black text-[#B91C1C] mb-1">
+                      ₹{analyticsExpensesTotal.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                    </div>
+                    <div className="text-[9px] text-[#000000] font-semibold">
+                      From the Expense Tracker
+                    </div>
+                  </div>
+
+                  <div className="bg-white border border-black/10 rounded-xl p-4 shadow-sm hover:shadow-md transition-all">
+                    <div className="flex justify-between items-start mb-3">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#000000]">
+                        Net Profit
+                      </span>
+                      <div className="w-6 h-6 rounded-full bg-[#15803D]/10 flex items-center justify-center">
+                        <TrendingUp className="w-3 h-3 text-[#15803D]" />
+                      </div>
+                    </div>
+                    <div className={`text-xl font-black mb-1 ${netProfitAmount < 0 ? "text-[#B91C1C]" : "text-[#15803D]"}`}>
+                      {netProfitAmount < 0 ? "−" : ""}₹{Math.abs(netProfitAmount).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                    </div>
+                    <div className="text-[9px] text-[#000000] font-semibold">
+                      Revenue minus expenses
                     </div>
                   </div>
 

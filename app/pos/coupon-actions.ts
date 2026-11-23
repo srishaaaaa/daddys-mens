@@ -20,6 +20,10 @@ export async function sendCouponAction(id: string, phone: string, restricted: bo
   await requireAdmin();
   return cp.recordCouponSend(id, phone, restricted);
 }
+export async function couponRecipientsAction(scope: "members" | "nonMembers" | "everyone") {
+  await requireAdmin();
+  return cp.listCouponRecipients(scope);
+}
 /** Billing: staff can check a code against the current subtotal. */
 export async function validateCouponAction(code: string, subtotal: number, phone: string) {
   await requireStaff();

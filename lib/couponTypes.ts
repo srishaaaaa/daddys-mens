@@ -1,5 +1,9 @@
 // Shared (client + server) coupon types and status logic.
+/** Who may use it: everyone, only customers who are not loyalty members, or only loyalty members. */
+export type CouponAudience = "all" | "regular" | "loyalty";
+
 export type Coupon = {
+  audience: CouponAudience;
   id: string;
   code: string;
   percent: number;
@@ -22,6 +26,7 @@ export type CouponInput = {
   limit: number | null;
   active: boolean;
   restricted: boolean;
+  audience: CouponAudience;
 };
 
 export type CouponStatus = "active" | "expired" | "exhausted" | "paused";

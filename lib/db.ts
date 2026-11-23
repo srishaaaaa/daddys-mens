@@ -7,6 +7,7 @@ export type StoredProduct = {
   name: string;
   description: string;
   default_price: number;
+  image_url?: string | null;
 };
 
 export type StoredOrderItem = {
@@ -32,6 +33,10 @@ export type StoredOrder = {
   created_at: string;
   /** How a UPI payment reached the shop (counter_qr, whatsapp_link, ...). Needs migration 0004. */
   upi_channel?: string | null;
+  /** Split payments: how much of the bill was paid in each way. Needs migration 0008. */
+  split_cash?: number;
+  split_upi?: number;
+  split_card?: number;
   order_items: StoredOrderItem[];
 };
 
@@ -39,19 +44,24 @@ const num = (v: unknown) => Number(v ?? 0); // defensive: coerce numeric/int8 to
 
 // ── Products ──────────────────────────────────────────────────────
 export async function getProducts(): Promise<StoredProduct[]> {
-  const { data, error } = await sb
+  // image_url needs migration 0008; fall back so billing keeps working without it.
+  let res: any = await sb
     .from("products")
-    .select("id, name, description, default_price")
+    .select("id, name, description, default_price, image_url")
     .order("created_at", { ascending: true });
-  if (error) {
-    console.error("Error fetching products from DB:", error);
+  if (res.error) {
+    res = await sb.from("products").select("id, name, description, default_price").order("created_at", { ascending: true });
+  }
+  if (res.error) {
+    console.error("Error fetching products from DB:", res.error);
     return [];
   }
-  return (data ?? []).map((r) => ({
+  return (res.data ?? []).map((r: any) => ({
     id: r.id,
     name: r.name,
     description: r.description,
     default_price: num(r.default_price),
+    image_url: r.image_url ?? null,
   }));
 }
 
@@ -163,6 +173,12 @@ export async function getOrder(id: string): Promise<StoredOrder | null> {
   // Read separately so the invoice still works before migration 0004 is applied.
   const { data: ch } = await sb.from("orders").select("upi_channel").eq("id", id).maybeSingle();
   order.upi_channel = (ch as { upi_channel?: string | null } | null)?.upi_channel ?? null;
+  const { data: sp } = await sb.from("orders").select("split_cash, split_upi, split_card").eq("id", id).maybeSingle();
+  if (sp) {
+    order.split_cash = num(sp.split_cash);
+    order.split_upi = num(sp.split_upi);
+    order.split_card = num(sp.split_card);
+  }
   return order;
 }
 
@@ -184,6 +200,13 @@ export async function saveOrder(order: StoredOrder): Promise<void> {
   if (order.upi_channel) {
     const { error: chErr } = await sb.from("orders").update({ upi_channel: order.upi_channel }).eq("id", order.id);
     if (chErr) console.error("Could not save the UPI channel (is migration 0004 applied?):", chErr.message);
+  }
+  if ((order.split_cash ?? 0) + (order.split_upi ?? 0) + (order.split_card ?? 0) > 0) {
+    const { error: spErr } = await sb
+      .from("orders")
+      .update({ split_cash: order.split_cash ?? 0, split_upi: order.split_upi ?? 0, split_card: order.split_card ?? 0 })
+      .eq("id", order.id);
+    if (spErr) console.error("Could not save the split amounts (is migration 0008 applied?):", spErr.message);
   }
   // Deduct stock only the first time a bill is saved (saves are upserts).
   if (isNew) {
