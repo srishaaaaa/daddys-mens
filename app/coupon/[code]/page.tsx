@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getPublicCoupon } from "@/lib/coupons";
+import { getShopProfile } from "@/lib/shopSettings";
 import CouponCard from "./CouponCard";
 
 export const dynamic = "force-dynamic";
@@ -13,14 +14,15 @@ type Props = {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { code } = await params;
   const c = await getPublicCoupon(code).catch(() => null);
-  if (!c) return { title: "Coupon — Daddy's Home" };
-  const title = `${c.percent}% OFF at Daddy's Home`;
+  const shop = await getShopProfile();
+  if (!c) return { title: `Coupon — ${shop.shopName}` };
+  const title = `${c.percent}% OFF at ${shop.shopName}`;
   const description = `Your code: ${c.code}${c.minOrder ? ` · valid on purchases of ₹${c.minOrder.toLocaleString("en-IN")} or more` : ""}`;
   // WhatsApp builds the link preview from these tags.
   return {
     title,
     description,
-    openGraph: { title, description, siteName: "Daddy's Home", images: ["/logo.png"] },
+    openGraph: { title, description, siteName: shop.shopName, images: ["/logo.png"] },
     twitter: { card: "summary", title, description, images: ["/logo.png"] },
     robots: { index: false, follow: false },
   };
@@ -31,5 +33,6 @@ export default async function CouponPage({ params, searchParams }: Props) {
   const { n } = await searchParams;
   const coupon = await getPublicCoupon(code).catch(() => null);
   if (!coupon) notFound();
-  return <CouponCard coupon={coupon} customerName={n?.slice(0, 40) ?? ""} />;
+  const shop = await getShopProfile();
+  return <CouponCard coupon={coupon} customerName={n?.slice(0, 40) ?? ""} shop={{ name: shop.shopName, tagline: shop.tagline, phone: shop.phone }} />;
 }

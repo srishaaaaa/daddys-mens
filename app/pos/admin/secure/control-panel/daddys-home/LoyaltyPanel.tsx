@@ -466,7 +466,7 @@ function Crm({ s }: { s: Shared }) {
   const all = d.customers.filter((c) => c.status === "active");
   const segOf = (id: string) => d.segments[id] ?? null;
   const rows = all.filter((c) => (!seg || segOf(c.id) === seg) && (!q || c.name.toLowerCase().includes(q.toLowerCase()) || c.phone.includes(q.replace(/\D/g, "") || "\u0000")) && (range ? d.purchases[c.id]?.some((p) => within(p.createdAt, range)) || within(c.createdAt, range) : true));
-  const fill = (c: LoyaltyCustomer) => fillMessage(text, { name: c.name || "there", shop: "Daddy's Home", balance: c.available, points: c.available });
+  const fill = (c: LoyaltyCustomer) => fillMessage(text, { name: c.name || "there", shop: d.shopName, balance: c.available, points: c.available });
   return (
     <div>
       <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">

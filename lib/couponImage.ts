@@ -1,9 +1,17 @@
 /* Draws a coupon onto a canvas (for "Save as image") and wraps it in a PDF (for "Generate & share PDF").
    Browser only. No libraries: the PDF is one page holding the coupon as a JPEG. */
 
-export type CouponArt = { code: string; percent: number; minOrder: number; expiresAt: string | null; customerName?: string };
-
-const PHONE = "8056642706";
+export type CouponArt = {
+  code: string;
+  percent: number;
+  minOrder: number;
+  expiresAt: string | null;
+  customerName?: string;
+  /** shown on the image; defaults are the shop's original details */
+  shopName?: string;
+  tagline?: string;
+  phone?: string;
+};
 const fmtDate = (d: string) => {
   const [y, m, day] = d.split("-").map(Number);
   return `${day}/${m}/${y}`;
@@ -36,10 +44,10 @@ export async function drawCouponCanvas(c: CouponArt): Promise<HTMLCanvasElement>
   g.textAlign = "center";
   g.fillStyle = "#F5EFE6";
   g.font = font(800, 56);
-  g.fillText("DADDY'S HOME", W / 2, 120);
+  g.fillText((c.shopName ?? "Daddy's Home").toUpperCase().slice(0, 28), W / 2, 120);
   g.fillStyle = "#D9B26A";
   g.font = font(600, 26);
-  g.fillText("PREMIUM MENSWEAR & ACCESSORIES", W / 2, 168);
+  g.fillText((c.tagline ?? "Premium Menswear & Accessories").toUpperCase().slice(0, 44), W / 2, 168);
 
   const x = 90, y = 230, w = W - 180, h = 900;
   g.save();
@@ -91,7 +99,7 @@ export async function drawCouponCanvas(c: CouponArt): Promise<HTMLCanvasElement>
   g.textAlign = "center";
   g.fillStyle = "#E7D9C3";
   g.font = font(500, 28);
-  g.fillText(`Show this code at the store or enter it at checkout. · ${PHONE}`, W / 2, y + h + 90);
+  g.fillText(`Show this code at the store or enter it at checkout.${(c.phone ?? "8056642706") ? ` · ${c.phone ?? "8056642706"}` : ""}`, W / 2, y + h + 90);
   return cv;
 }
 

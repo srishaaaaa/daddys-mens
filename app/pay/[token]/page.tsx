@@ -4,10 +4,10 @@ import { readPayLink } from "@/lib/paylink";
 import { PayClient } from "./PayClient";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = {
-  title: "Pay your bill — Daddy's Home",
-  robots: { index: false, follow: false },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const upi = await getUpiConfig();
+  return { title: `Pay your bill — ${upi?.shopName ?? "Shop"}`, robots: { index: false, follow: false } };
+}
 
 /* Opened from the WhatsApp message staff send: the amount, the shop's UPI ID, and a QR to pay it. */
 export default async function PayPage({ params }: { params: Promise<{ token: string }> }) {
@@ -30,7 +30,7 @@ export default async function PayPage({ params }: { params: Promise<{ token: str
   if (!r.ok || !upi) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-[#F5EFE6] p-6 text-center">
-        <h1 className="mb-1 text-base font-bold text-[#C1272D]">Daddy&apos;s Home</h1>
+        <h1 className="mb-1 text-base font-bold text-[#C1272D]">{upi?.shopName ?? "Shop"}</h1>
         <p className="max-w-sm text-sm text-[#4A4038]">{note}</p>
       </div>
     );

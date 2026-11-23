@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { couponStatus, type Coupon, type CouponAudience } from "@/lib/couponTypes";
 import { canvasToPdf, drawCouponCanvas, sharePdf } from "@/lib/couponImage";
-import { getPublicUrlAction } from "@/app/pos/settings-actions";
+import { getShopProfileAction } from "@/app/pos/settings-actions";
 import {
   couponRecipientsAction,
   deleteCouponAction,
@@ -473,8 +473,9 @@ function SendCoupon({ coupon: c, onClose, onSent }: { coupon: Coupon; onClose: (
   const [name, setName] = useState("");
   const [only, setOnly] = useState(c.restricted);
   const [siteUrl, setSiteUrl] = useState("");
+  const [shop, setShop] = useState({ shopName: "Daddy's Home", phone: "8056642706" });
   useEffect(() => {
-    getPublicUrlAction().then(setSiteUrl).catch(() => {});
+    getShopProfileAction().then((p) => { setSiteUrl(p.publicUrl); setShop({ shopName: p.shopName, phone: p.phone }); }).catch(() => {});
   }, []);
   const [busy, setBusy] = useState(false);
   const ok = /^[6-9]\d{9}$/.test(phone);
@@ -484,7 +485,7 @@ function SendCoupon({ coupon: c, onClose, onSent }: { coupon: Coupon; onClose: (
   const message = [
     `Dear ${who || "Customer"},`,
     "",
-    "🎁 A special gift from *Daddy's Home* 🎁",
+    `🎁 A special gift from *${shop.shopName}* 🎁`,
     "",
     `🎉 *${c.percent}% OFF*`,
     `🔑 Your code: *${c.code}*`,
@@ -495,7 +496,7 @@ function SendCoupon({ coupon: c, onClose, onSent }: { coupon: Coupon; onClose: (
     "",
     `🎟️ Open your coupon: ${link}`,
     "",
-    "📞 80566 42706",
+    ...(shop.phone ? [`📞 ${shop.phone.slice(0, 5)} ${shop.phone.slice(5)}`] : []),
   ].join("\n");
 
   // PDF: the coupon as a one-page file, shared through the phone's share sheet (or downloaded on a computer).
@@ -503,7 +504,7 @@ function SendCoupon({ coupon: c, onClose, onSent }: { coupon: Coupon; onClose: (
     if (!ok || busy) return;
     setBusy(true);
     try {
-      const cv = await drawCouponCanvas({ code: c.code, percent: c.percent, minOrder: c.minOrder, expiresAt: c.expiresAt, customerName: who || undefined });
+      const cv = await drawCouponCanvas({ code: c.code, percent: c.percent, minOrder: c.minOrder, expiresAt: c.expiresAt, customerName: who || undefined, shopName: shop.shopName, phone: shop.phone });
       const file = new File([canvasToPdf(cv)], `coupon-${c.code}.pdf`, { type: "application/pdf" });
       const how = await sharePdf(file, message);
       if (how === "cancelled") return;
@@ -603,12 +604,13 @@ function BlastCoupon({ coupon: c, onClose, onSent }: { coupon: Coupon; onClose: 
   const scope = c.audience === "loyalty" ? "members" : c.audience === "regular" ? "nonMembers" : "everyone";
   const [people, setPeople] = useState<{ phone: string; name: string; member: boolean }[] | null>(null);
   const [siteUrl, setSiteUrl] = useState("");
+  const [shop, setShop] = useState({ shopName: "Daddy's Home", phone: "8056642706" });
   const [done, setDone] = useState<string[]>([]);
   const [q, setQ] = useState("");
 
   useEffect(() => {
     couponRecipientsAction(scope).then(setPeople).catch(() => setPeople([]));
-    getPublicUrlAction().then(setSiteUrl).catch(() => {});
+    getShopProfileAction().then((p) => { setSiteUrl(p.publicUrl); setShop({ shopName: p.shopName, phone: p.phone }); }).catch(() => {});
   }, [scope]);
 
   const base = (siteUrl || process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== "undefined" ? window.location.origin : "")).replace(/\/$/, "");
@@ -616,12 +618,12 @@ function BlastCoupon({ coupon: c, onClose, onSent }: { coupon: Coupon; onClose: 
     const link = `${base}/coupon/${c.code}${name ? `?n=${encodeURIComponent(name)}` : ""}`;
     return [
       `Dear ${name || "Customer"},`, "",
-      c.audience === "loyalty" ? "🎁 An exclusive gift for our loyalty members at *Daddy's Home* 🎁" : "🎁 A special gift from *Daddy's Home* 🎁", "",
+      c.audience === "loyalty" ? `🎁 An exclusive gift for our loyalty members at *${shop.shopName}* 🎁` : `🎁 A special gift from *${shop.shopName}* 🎁`, "",
       `🎉 *${c.percent}% OFF*`, `🔑 Your code: *${c.code}*`, "",
       c.minOrder ? `• Valid on purchases of ${rupee(c.minOrder)} or more` : "• No minimum purchase",
       ...(c.expiresAt ? [`• Valid till ${ddmmyyyy(c.expiresAt)}`] : []),
       "• Show this code at billing. Discount applies to the item value only.", "",
-      `🎟️ Open your coupon: ${link}`, "", "📞 80566 42706",
+      `🎟️ Open your coupon: ${link}`, ...(shop.phone ? ["", `📞 ${shop.phone.slice(0, 5)} ${shop.phone.slice(5)}`] : []),
     ].join("\n") + (phone ? "" : "");
   };
 

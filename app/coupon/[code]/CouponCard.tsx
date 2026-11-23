@@ -12,7 +12,6 @@ type PublicCoupon = {
   status: "active" | "expired" | "exhausted" | "paused";
 };
 
-const PHONE = "8056642706";
 const BANNER = {
   expired: "This coupon has expired.",
   exhausted: "This coupon has been fully used.",
@@ -24,7 +23,9 @@ const fmtDate = (d: string) => {
   return `${day}/${m}/${y}`;
 };
 
-export default function CouponCard({ coupon: c, customerName }: { coupon: PublicCoupon; customerName: string }) {
+type Shop = { name: string; tagline: string; phone: string };
+
+export default function CouponCard({ coupon: c, customerName, shop }: { coupon: PublicCoupon; customerName: string; shop: Shop }) {
   const [copied, setCopied] = useState(false);
   const rules = [
     c.minOrder ? `Valid on purchases of ₹${c.minOrder.toLocaleString("en-IN")} or more` : "No minimum purchase",
@@ -49,7 +50,7 @@ export default function CouponCard({ coupon: c, customerName }: { coupon: Public
 
   // Draws the coupon onto a canvas and downloads it as a PNG.
   const saveImage = async () => {
-    const cv = await drawCouponCanvas({ code: c.code, percent: c.percent, minOrder: c.minOrder, expiresAt: c.expiresAt, customerName });
+    const cv = await drawCouponCanvas({ code: c.code, percent: c.percent, minOrder: c.minOrder, expiresAt: c.expiresAt, customerName, shopName: shop.name, tagline: shop.tagline, phone: shop.phone });
     const a = document.createElement("a");
     a.href = cv.toDataURL("image/png");
     a.download = `coupon-${c.code}.png`;
@@ -65,10 +66,10 @@ export default function CouponCard({ coupon: c, customerName }: { coupon: Public
       <div className="w-full max-w-[460px]">
         <header className="text-center mb-7">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.png" alt="Daddy's Home" className="mx-auto h-16 w-16 object-contain mb-3" />
-          <h1 className="text-[26px] font-extrabold tracking-[0.18em] uppercase">Daddy&apos;s Home</h1>
+          <img src="/logo.png" alt={shop.name} className="mx-auto h-16 w-16 object-contain mb-3" />
+          <h1 className="text-[26px] font-extrabold tracking-[0.18em] uppercase">{shop.name}</h1>
           <p className="mt-1 text-[10px] font-semibold tracking-[0.32em] uppercase text-[#D9B26A]">
-            Premium Menswear &amp; Accessories
+            {shop.tagline}
           </p>
         </header>
 
@@ -115,12 +116,12 @@ export default function CouponCard({ coupon: c, customerName }: { coupon: Public
           </div>
         </section>
 
-        <a
-          href={`tel:+91${PHONE}`}
+        {shop.phone && <a
+          href={`tel:+91${shop.phone}`}
           className="mt-5 block rounded-xl bg-gradient-to-r from-[#D9B26A] to-[#EAD29B] py-4 text-center text-[13px] font-extrabold tracking-[0.25em] uppercase text-[#3A0B0E] shadow-[0_10px_30px_-10px_rgba(217,178,106,.6)]"
         >
           Call the store
-        </a>
+        </a>}
         <button
           onClick={saveImage}
           className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 py-3.5 text-[14px] font-bold text-white hover:bg-white/10 transition cursor-pointer"
@@ -128,7 +129,7 @@ export default function CouponCard({ coupon: c, customerName }: { coupon: Public
           <Download className="w-4 h-4" /> Save coupon as image
         </button>
         <p className="mt-5 text-center text-xs text-[#E7D9C3]/80">
-          Show this code at the store or enter it at checkout. · {PHONE}
+          Show this code at the store or enter it at checkout.{shop.phone ? ` · ${shop.phone}` : ""}
         </p>
       </div>
     </main>

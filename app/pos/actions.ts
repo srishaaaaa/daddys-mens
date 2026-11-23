@@ -4,25 +4,23 @@ import { requireStaff, requireAdmin, setSessionRoleCookie, clearSessionRoleCooki
 import * as db from "@/lib/db";
 import type { StoredProduct, StoredOrder } from "@/lib/db";
 import { revalidatePath } from "next/cache";
+import { passcodeMatches } from "@/lib/passcodes";
 
 export async function verifyPasscode(
   enteredPasscode: string,
 ): Promise<{ success: boolean; role?: "staff" | "admin" }> {
-  // Read from .env — no passcodes in source, and never sent to the browser.
-  const adminPasscode = process.env.ADMIN_PASSCODE;
-  const staffPasscode = process.env.STAFF_PASSCODE;
-
+  // A passcode changed in Settings (stored hashed) wins; otherwise the one in .env. Never sent to the browser.
   const normalizedEntered = enteredPasscode.replace(/\s/g, "");
 
   if (!normalizedEntered) {
     return { success: false };
   }
 
-  if (adminPasscode && normalizedEntered === adminPasscode) {
+  if (await passcodeMatches("admin", normalizedEntered)) {
     await setSessionRoleCookie("admin");
     return { success: true, role: "admin" };
   }
-  if (staffPasscode && normalizedEntered === staffPasscode) {
+  if (await passcodeMatches("staff", normalizedEntered)) {
     await setSessionRoleCookie("staff");
     return { success: true, role: "staff" };
   }

@@ -13,9 +13,9 @@ export async function getUpiConfig(): Promise<UpiConfig | null> {
   const minutes = s.upiQrMinutes > 0 ? s.upiQrMinutes : envMinutes > 0 ? envMinutes : 5;
   return {
     id,
-    name: (s.upiName || process.env.SHOP_UPI_NAME || "").trim() || "Daddy's Home",
+    name: (s.upiName || process.env.SHOP_UPI_NAME || "").trim() || s.shopName,
     phone: (s.upiPhone || process.env.SHOP_UPI_PHONE || "").replace(/\D/g, "").slice(-10),
     minutes,
-    shopName: "Daddy's Home",
+    shopName: s.shopName,
   };
 }

@@ -5,12 +5,12 @@ import { DEFAULT_CONFIG, sanitizeConfig, type LoyaltyConfig, type MessageKey } f
 import { earnFor, pointsValue, segmentOf, statsFrom } from "./engine";
 import { fillMessage } from "./messages";
 import { offerLive } from "./gifts";
+import { getShopSettings } from "@/lib/shopSettings";
 import type {
   Audit, GiftOffer, LedgerEntry, LoyaltyCustomer, LoyaltyLookup, LoyaltyMessage, LoyaltyState,
   PurchaseStats, Reward, Segment, Voucher, VoucherSource,
 } from "./types";
 
-export const SHOP_NAME = "Daddy's Home";
 
 const num = (v: unknown) => Number(v ?? 0);
 const ms = (v: unknown) => (v ? new Date(String(v)).getTime() : 0);
@@ -68,8 +68,9 @@ const docOf = <T extends { id: string }>(r: any): T => ({ ...(r.data as T), id: 
 /* ---------------------------------------------------------------- messages */
 async function prepareMessage(cfg: LoyaltyConfig, type: MessageKey, c: LoyaltyCustomer, vars: Record<string, string | number | null | undefined>, orderId?: string | null) {
   if (!cfg.enabled || !cfg.messages.enabled || !cfg.messages.events[type] || !c.consent) return;
+  const shopName = (await getShopSettings()).shopName;
   const text = fillMessage(cfg.messages.templates[type], {
-    name: c.name || "there", shop: SHOP_NAME, date: new Date().toLocaleDateString("en-IN"),
+    name: c.name || "there", shop: shopName, date: new Date().toLocaleDateString("en-IN"),
     balance: c.available, bill: orderId ?? "", wallet: "", ...vars,
   });
   const { error } = await sb.from("loyalty_messages").insert({
@@ -85,6 +86,7 @@ export type LoyaltyData = LoyaltyState & {
   purchases: Record<string, { id: string; total: number; createdAt: number }[]>;
   products: { id: string; name: string; category: string }[];
   categories: string[];
+  shopName: string;
 };
 
 async function allOrders() {
@@ -156,6 +158,7 @@ export async function loadState(): Promise<LoyaltyData> {
     stats, segments, purchases,
     products: (prod.data ?? []).map((p: any) => ({ id: p.id, name: p.name, category: p.category ?? "General" })),
     categories: [...cats].sort(),
+    shopName: (await getShopSettings()).shopName,
   };
 }
 

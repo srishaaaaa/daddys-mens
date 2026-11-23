@@ -1,5 +1,6 @@
 import { getOrder } from "@/lib/db";
 import { getConfig, orderLoyalty } from "@/lib/loyalty/server";
+import { getShopProfile } from "@/lib/shopSettings";
 import { notFound } from "next/navigation";
 import { MapPin, Phone, Mail } from "lucide-react";
 import InvoiceActions from "./invoice-actions";
@@ -36,6 +37,8 @@ export default async function InvoicePage({
     notFound();
   }
 
+  const shop = await getShopProfile();
+
   // Loyalty summary: only for bills with a loyalty customer, and only when the setting is on.
   const loyalty = await orderLoyalty(id).catch(() => null);
   const showLoyalty = loyalty ? (await getConfig().catch(() => null))?.display.receiptSummary : false;
@@ -66,36 +69,39 @@ export default async function InvoicePage({
           <div className="w-24 h-24 flex items-center justify-center mb-4">
             <img
               src="/logo.png"
-              alt="Daddy's Home Logo"
+              alt={`${shop.shopName} Logo`}
               className="max-w-full max-h-full object-contain"
             />
           </div>
           <h1 className="text-3xl font-black text-[#C1272D] tracking-tight">
-            Daddy's Home
+            {shop.shopName}
           </h1>
           <p className="text-xs text-[#6B5F52] font-bold tracking-wider mt-1 mb-4">
             INVOICE: {order.id}
           </p>
 
           <div className="flex flex-col items-center gap-2 text-sm text-[#4A4038] font-semibold">
-            <div className="text-center max-w-md leading-relaxed">
-              <span className="inline-block text-[#C1272D] mr-1.5 align-middle -mt-0.5">
-                <MapPin className="w-3.5 h-3.5" />
-              </span>
-              <span>
-                East 2nd Street, Near Bombay Bhavan, 1st Floor, Pudukkottai -
-                622001.
-              </span>
-            </div>
+            {shop.address && (
+              <div className="text-center max-w-md leading-relaxed">
+                <span className="inline-block text-[#C1272D] mr-1.5 align-middle -mt-0.5">
+                  <MapPin className="w-3.5 h-3.5" />
+                </span>
+                <span>{shop.address}</span>
+              </div>
+            )}
             <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-1">
-              <span className="flex items-center gap-1.5">
-                <Phone className="w-3.5 h-3.5 text-[#C1272D] shrink-0" />
-                +91 8056642706
-              </span>
-              <span className="flex items-center gap-1.5">
-                <Mail className="w-3.5 h-3.5 text-[#C1272D] shrink-0" />
-                divyadarshan409@gmail.com
-              </span>
+              {shop.phone && (
+                <span className="flex items-center gap-1.5">
+                  <Phone className="w-3.5 h-3.5 text-[#C1272D] shrink-0" />
+                  +91 {shop.phone}
+                </span>
+              )}
+              {shop.email && (
+                <span className="flex items-center gap-1.5">
+                  <Mail className="w-3.5 h-3.5 text-[#C1272D] shrink-0" />
+                  {shop.email}
+                </span>
+              )}
             </div>
           </div>
         </div>

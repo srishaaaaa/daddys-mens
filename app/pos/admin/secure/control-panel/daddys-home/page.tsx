@@ -55,6 +55,7 @@ import type { GiftOffer, LoyaltyLookup } from "@/lib/loyalty/types";
 import { suggestCustomersAction } from "@/app/pos/loyalty-actions";
 import { UpiQrCard } from "@/app/_components/UpiQrCard";
 import { createPayLinkAction, getUpiConfigAction } from "@/app/pos/pay-actions";
+import { getShopProfileAction } from "@/app/pos/settings-actions";
 import { listCouponsAction, redeemCouponAction, validateCouponAction } from "@/app/pos/coupon-actions";
 import type { Coupon as DbCoupon } from "@/lib/couponTypes";
 import {
@@ -370,6 +371,8 @@ export default function POSBilling() {
   // UPI: the shop's details come from .env; the channel records how the payment reached the shop.
   const [upiCfg, setUpiCfg] = useState<{ id: string; name: string; phone: string; minutes: number; shopName: string } | null>(null);
   const [upiVia, setUpiVia] = useState<string>("");
+  // Shop name and phone, from Settings (used in headings and WhatsApp messages).
+  const [shopProfile, setShopProfile] = useState({ shopName: "Daddy's Home", phone: "8056642706" });
   const [linkSent, setLinkSent] = useState(false);
   // Split payment: any mix of cash, UPI and card that adds up to the bill.
   const [splitCash, setSplitCash] = useState<number | "">("");
@@ -532,6 +535,7 @@ export default function POSBilling() {
       );
 
       getUpiConfigAction().then(setUpiCfg).catch(() => {});
+      getShopProfileAction().then((p) => setShopProfile({ shopName: p.shopName, phone: p.phone })).catch(() => {});
       listBillOffersAction().then(setBillOffers).catch(() => {});
       listExpensesAction()
         .then((rows) => setExpenseRows(rows.map((e) => ({ amount: e.amount, date: e.expense_date }))))
@@ -1186,7 +1190,7 @@ export default function POSBilling() {
     const moneyEmoji = String.fromCodePoint(0x1f4b0);
     const receiptEmoji = String.fromCodePoint(0x1f4e6);
 
-    let message = `${shopEmoji} *Daddy's Home* ${shopEmoji}\n\n`;
+    let message = `${shopEmoji} *${shopProfile.shopName}* ${shopEmoji}\n\n`;
     message += `${checkEmoji} Here are your invoice details!\n\n`;
 
     message += `*Subtotal:* ₹${snap.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}\n`;
@@ -1856,7 +1860,7 @@ export default function POSBilling() {
     const moneyEmoji = String.fromCodePoint(0x1F4B0);
     const receiptEmoji = String.fromCodePoint(0x1F4E6);
 
-    let message = `${shopEmoji} *Daddy's Home* ${shopEmoji}\n\n`;
+    let message = `${shopEmoji} *${shopProfile.shopName}* ${shopEmoji}\n\n`;
     message += `${checkEmoji} Here are your invoice details!\n\n`;
     
     message += `*Subtotal:* ₹${order.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}\n`;
@@ -1992,7 +1996,7 @@ export default function POSBilling() {
                 </div>
                 <div>
                   <span className="font-black text-sm tracking-tight text-[#FFFFFF] block ">
-                    Daddy's Home
+                    {shopProfile.shopName}
                   </span>
                 </div>
               </div>
@@ -2142,7 +2146,7 @@ export default function POSBilling() {
             </button>
             <div>
               <h1 className="text-lg font-black text-[#000000] tracking-tight ">
-                Daddy's Home
+                {shopProfile.shopName}
               </h1>
             </div>
             <InstallAppButton />
