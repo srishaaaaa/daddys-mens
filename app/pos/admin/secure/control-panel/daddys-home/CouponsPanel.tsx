@@ -207,8 +207,8 @@ export default function CouponsPanel() {
   ];
 
   return (
-    <div className="flex-1 w-full max-w-[1400px] mx-auto pb-8 animate-in fade-in duration-300">
-      <div className="rounded-3xl bg-[#FDFCF7] p-5 sm:p-8 border border-black/5 shadow-sm">
+    <div className="flex-1 w-full max-w-[1400px] mx-auto pb-8 pr-2 animate-in fade-in duration-300">
+      <div>
         <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-[28px] font-black tracking-tight text-black">Coupon Management</h2>

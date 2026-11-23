@@ -69,8 +69,8 @@ export default function LoyaltyPanel({ admin }: { admin: boolean }) {
   const shared: Shared | null = d ? { d, reload, range, label, ledger } : null;
 
   return (
-    <div className="mx-auto w-full max-w-[1400px] flex-1 pb-8 animate-in fade-in duration-300">
-      <div className="rounded-3xl border border-black/5 bg-[#FDFCF7] p-5 shadow-sm sm:p-8">
+    <div className="mx-auto w-full max-w-[1400px] flex-1 pb-8 pr-2 animate-in fade-in duration-300">
+      <div>
         <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-[28px] font-black tracking-tight text-black">Loyalty</h2>
