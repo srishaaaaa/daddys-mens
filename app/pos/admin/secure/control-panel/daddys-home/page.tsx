@@ -119,6 +119,8 @@ type CompletedOrder = {
   splitCash?: number;
   splitUpi?: number;
   splitCard?: number;
+  /** saved GST flag; undefined on bills from before it existed */
+  isGst?: boolean;
   date: string;
   status: "Completed" | "Pending";
 };
@@ -609,6 +611,7 @@ export default function POSBilling() {
             splitCash: o.split_cash ?? 0,
             splitUpi: o.split_upi ?? 0,
             splitCard: o.split_card ?? 0,
+            isGst: o.is_gst,
             date: o.created_at,
             status: (o.status === "COMPLETED" ? "Completed" : "Pending") as
               | "Completed"
@@ -1046,6 +1049,10 @@ export default function POSBilling() {
         grand_total: grandTotal,
         cash_received: actualCashReceived,
         created_at: createdAt,
+        is_gst: applyGST,
+        gst_inclusive: applyGST && gstInclusive,
+        gst_percent: applyGST ? gstPercentage : 0,
+        gst_amount: applyGST ? gstAmount : 0,
         upi_channel: paymentMethod === "GPAY" || (paymentMethod === "SPLIT" && Number(splitUpi) > 0) ? upiVia || defaultUpiVia : null,
         split_cash: paymentMethod === "SPLIT" ? Number(splitCash) || 0 : 0,
         split_upi: paymentMethod === "SPLIT" ? Number(splitUpi) || 0 : 0,
@@ -1369,7 +1376,8 @@ export default function POSBilling() {
   // Real-time analytics derived from orders with period filtering
   const now = new Date();
 
-  const isGstOrder = (o: CompletedOrder) => o.items.some((i) => i.name.startsWith("GST ("));
+  // The saved flag decides; bills without one (before migration 0010) are recognised by their GST line.
+  const isGstOrder = (o: CompletedOrder) => (o.isGst !== undefined ? o.isGst : o.items.some((i) => i.name.startsWith("GST (")));
   const analyticsFilteredOrders = orders.filter((o) => {
     if (billTypeFilter !== "all" && (billTypeFilter === "gst") !== isGstOrder(o)) return false;
     if (

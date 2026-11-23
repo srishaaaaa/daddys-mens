@@ -37,6 +37,11 @@ export type StoredOrder = {
   split_cash?: number;
   split_upi?: number;
   split_card?: number;
+  /** GST details saved with the bill (needs migration 0010). Undefined on old data. */
+  is_gst?: boolean;
+  gst_inclusive?: boolean;
+  gst_percent?: number;
+  gst_amount?: number;
   order_items: StoredOrderItem[];
 };
 
@@ -169,6 +174,20 @@ export async function getOrders(): Promise<StoredOrder[]> {
       }
     }
   }
+  // GST flag (migration 0010); without it analytics falls back to looking for the GST line.
+  const { data: gs } = await sb.from("orders").select("id, is_gst, gst_inclusive, gst_percent, gst_amount");
+  if (gs) {
+    const byId = new Map((gs as any[]).map((r) => [r.id, r]));
+    for (const o of orders) {
+      const r = byId.get(o.id);
+      if (r) {
+        o.is_gst = !!r.is_gst;
+        o.gst_inclusive = !!r.gst_inclusive;
+        o.gst_percent = num(r.gst_percent);
+        o.gst_amount = num(r.gst_amount);
+      }
+    }
+  }
   return orders;
 }
 
@@ -214,6 +233,13 @@ export async function saveOrder(order: StoredOrder): Promise<void> {
   if (order.upi_channel) {
     const { error: chErr } = await sb.from("orders").update({ upi_channel: order.upi_channel }).eq("id", order.id);
     if (chErr) console.error("Could not save the UPI channel (is migration 0004 applied?):", chErr.message);
+  }
+  if (order.is_gst !== undefined) {
+    const { error: gstErr } = await sb
+      .from("orders")
+      .update({ is_gst: order.is_gst, gst_inclusive: order.gst_inclusive ?? false, gst_percent: order.gst_percent ?? 0, gst_amount: order.gst_amount ?? 0 })
+      .eq("id", order.id);
+    if (gstErr) console.error("Could not save the GST details (is migration 0010 applied?):", gstErr.message);
   }
   if ((order.split_cash ?? 0) + (order.split_upi ?? 0) + (order.split_card ?? 0) > 0) {
     const { error: spErr } = await sb

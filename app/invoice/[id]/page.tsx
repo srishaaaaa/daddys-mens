@@ -223,6 +223,10 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
             )}
           </div>
         </div>
+
+        <div className="mt-8 border-t border-black/10 pt-4 text-center text-[11px] text-slate-400">
+          Powered by Cenexa Systems © {new Date().getFullYear()}
+        </div>
       </div>
     </div>
   );
