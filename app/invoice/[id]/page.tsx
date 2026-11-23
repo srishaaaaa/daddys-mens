@@ -76,6 +76,15 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
   const gstItem = order.order_items.find((i) => i.snapshot_name.startsWith("GST ("));
   const gstAmount = gstItem ? gstItem.snapshot_price * gstItem.quantity : 0;
 
+  // GST is shown as CGST + SGST (half each) with the percentage and amount.
+  const gstPct = Number(gstItem?.snapshot_name.match(/\(([\d.]+)%/)?.[1] ?? order.gst_percent ?? 0);
+  const gstIncl = !!gstItem && /incl/i.test(gstItem.snapshot_name);
+  const cgst = Math.round((gstAmount / 2) * 100) / 100;
+  const sgst = Math.round((gstAmount - cgst) * 100) / 100;
+  const halfPct = gstPct / 2;
+  const when = new Date(order.created_at).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" });
+  const itemCount = lines.reduce((n, i) => n + i.quantity, 0);
+
   const split = (order.split_cash ?? 0) + (order.split_upi ?? 0) + (order.split_card ?? 0) > 0;
   const channel = order.upi_channel ? UPI_CHANNEL_LABELS[order.upi_channel] : "";
   const paidVia =
@@ -86,6 +95,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
     : "Split";
   const paid = method === "CASH" && order.cash_received > 0 ? order.cash_received : order.grand_total;
   const balance = Math.max(0, Math.round((order.grand_total - paid) * 100) / 100);
+  const change = method === "CASH" ? Math.max(0, Math.round((paid - order.grand_total) * 100) / 100) : 0;
 
   const lab = "text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500";
 
@@ -178,6 +188,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
                 </div>
               )}
               <div className="flex items-baseline justify-between gap-3"><span className="text-slate-600">Amount Paid:</span><b className="font-mono text-black">{money(paid)}</b></div>
+              {change > 0 && <div className="flex items-baseline justify-between gap-3"><span className="text-slate-600">Change Returned:</span><b className="font-mono text-black">{money(change)}</b></div>}
               <div className="flex items-baseline justify-between gap-3"><span className="text-slate-600">Balance Due:</span><b className={`font-mono ${balance > 0 ? "text-[#C1272D]" : "text-emerald-600"}`}>{money(balance)}</b></div>
             </div>
 
@@ -200,10 +211,15 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
               {order.delivery_fee > 0 && (
                 <div className="flex justify-between"><span className="text-slate-700">Delivery</span><span className="font-mono font-semibold text-black">{money(order.delivery_fee)}</span></div>
               )}
-              <div className="flex justify-between">
-                <span className="text-slate-500">{gstItem ? gstItem.snapshot_name : "GST"}</span>
-                <span className={gstItem ? "font-mono font-semibold text-black" : "text-slate-500"}>{gstItem ? money(gstAmount) : "Non-GST bill"}</span>
-              </div>
+              {gstItem ? (
+                <>
+                  <div className="flex justify-between"><span className="text-slate-700">CGST ({halfPct}%)</span><span className="font-mono font-semibold text-black">{money(cgst)}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-700">SGST ({halfPct}%)</span><span className="font-mono font-semibold text-black">{money(sgst)}</span></div>
+                  <div className="flex justify-between text-[12px]"><span className="text-slate-500">Total GST ({gstPct}%{gstIncl ? ", included in prices" : ""})</span><span className="font-mono text-slate-600">{money(gstAmount)}</span></div>
+                </>
+              ) : (
+                <div className="flex justify-between"><span className="text-slate-500">GST</span><span className="text-slate-500">Non-GST bill</span></div>
+              )}
             </div>
             <div className="mt-3 flex items-baseline justify-between border-t-2 border-[#C1272D] pt-3">
               <span className="text-[17px] font-black uppercase tracking-wide text-[#C1272D]">Total</span>
@@ -227,6 +243,67 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
         <div className="mt-8 border-t border-black/10 pt-4 text-center text-[11px] text-slate-400">
           Powered by Cenexa Systems © {new Date().getFullYear()}
         </div>
+      </div>
+
+      {/* Thermal receipt: hidden on screen, shown only when printing on a thermal roll */}
+      <div id="thermal-receipt" className="hidden font-mono text-black">
+        <div className="text-center">
+          <p className="rc-name">{shop.shopName}</p>
+          {shop.address && <p>{shop.address}</p>}
+          {shop.phone && <p>Ph: +91 {shop.phone}</p>}
+          {shop.email && <p>{shop.email}</p>}
+        </div>
+        <hr />
+        <div className="rc-row"><span>{order.id}</span><span>{modeLabel}</span></div>
+        <p>{when}</p>
+        <p>{order.customer_name || "Walk-in customer"}{phone ? ` · +91 ${phone}` : ""}</p>
+        <hr />
+        {lines.map((item, i) => (
+          <div key={i} className="rc-item">
+            <p>{item.snapshot_name}{item.snapshot_price === 0 ? " (free gift)" : ""}</p>
+            <div className="rc-row"><span>{item.quantity} × {money(item.snapshot_price)}</span><span>{money(item.snapshot_price * item.quantity)}</span></div>
+          </div>
+        ))}
+        <hr />
+        <div className="rc-row"><span>Subtotal ({itemCount})</span><span>{money(order.subtotal)}</span></div>
+        {order.discount_amount > 0 && <div className="rc-row"><span>Discount{order.discount_type === "PERCENT" && order.discount_value ? ` (${order.discount_value}%)` : ""}</span><span>− {money(order.discount_amount)}</span></div>}
+        {order.delivery_fee > 0 && <div className="rc-row"><span>Delivery</span><span>{money(order.delivery_fee)}</span></div>}
+        {gstItem ? (
+          <>
+            <div className="rc-row"><span>CGST ({halfPct}%)</span><span>{money(cgst)}</span></div>
+            <div className="rc-row"><span>SGST ({halfPct}%)</span><span>{money(sgst)}</span></div>
+            <div className="rc-row"><span>GST {gstPct}%{gstIncl ? " (incl.)" : ""}</span><span>{money(gstAmount)}</span></div>
+          </>
+        ) : (
+          <div className="rc-row"><span>GST</span><span>Non-GST bill</span></div>
+        )}
+        <hr />
+        <div className="rc-row rc-total"><span>TOTAL</span><span>{money(order.grand_total)}</span></div>
+        <hr />
+        <div className="rc-row"><span>Paid via</span><span>{paidVia}</span></div>
+        {split && (
+          <>
+            {!!order.split_cash && <div className="rc-row"><span>&nbsp;&nbsp;Cash</span><span>{money(order.split_cash)}</span></div>}
+            {!!order.split_upi && <div className="rc-row"><span>&nbsp;&nbsp;UPI</span><span>{money(order.split_upi)}</span></div>}
+            {!!order.split_card && <div className="rc-row"><span>&nbsp;&nbsp;Card</span><span>{money(order.split_card)}</span></div>}
+          </>
+        )}
+        <div className="rc-row"><span>Amount paid</span><span>{money(paid)}</span></div>
+        {change > 0 && <div className="rc-row"><span>Change returned</span><span>{money(change)}</span></div>}
+        <div className="rc-row"><span>Balance due</span><span>{money(balance)}</span></div>
+        {loyalty && showLoyalty && (
+          <>
+            <hr />
+            <p className="font-bold">LOYALTY POINTS</p>
+            <div className="rc-row"><span>Previous</span><span>{loyalty.prev}</span></div>
+            <div className="rc-row"><span>Earned</span><span>+{loyalty.earned}</span></div>
+            <div className="rc-row"><span>Redeemed</span><span>-{loyalty.used}</span></div>
+            <div className="rc-row"><span>Remaining</span><span>{loyalty.balance}</span></div>
+          </>
+        )}
+        <hr />
+        <p className="text-center font-bold">thank you — come again</p>
+        <p className="text-center rc-small">Powered by Cenexa Systems © {new Date().getFullYear()}</p>
       </div>
     </div>
   );

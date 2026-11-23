@@ -41,13 +41,21 @@ export function savePrefs(p: PrintPrefs) {
 export function printCss(p: PrintPrefs): string {
   if (p.type === "thermal") {
     const mm = p.size === "58" ? 58 : 80;
-    // The same layout as the invoice, drawn 600px wide and scaled to fit the roll.
-    const zoom = (((mm - 4) * 96) / 25.4 / 600).toFixed(3);
+    const fs = p.size === "58" ? 10 : 12; // px
     return `
 @media print {
   @page { size: ${mm}mm auto; margin: 2mm; }
-  body, body > div { background: #fff !important; padding: 0 !important; }
-  #invoice-doc { width: 600px !important; max-width: 600px !important; zoom: ${zoom}; box-shadow: none !important; border: 0 !important; border-radius: 0 !important; padding: 8px !important; }
+  body, body > div { background: #fff !important; padding: 0 !important; min-height: 0 !important; }
+  #invoice-doc { display: none !important; }
+  #thermal-receipt { display: block !important; width: 100%; font-size: ${fs}px; line-height: 1.35; }
+  #thermal-receipt p { margin: 0; word-break: break-word; }
+  #thermal-receipt hr { border: 0; border-top: 1px dashed #000; margin: 6px 0; }
+  #thermal-receipt .rc-name { font-size: ${fs + 6}px; font-weight: 800; text-transform: uppercase; }
+  #thermal-receipt .rc-row { display: flex; justify-content: space-between; gap: 6px; }
+  #thermal-receipt .rc-row span:last-child { text-align: right; white-space: nowrap; }
+  #thermal-receipt .rc-item { margin-bottom: 3px; }
+  #thermal-receipt .rc-total { font-size: ${fs + 4}px; font-weight: 800; }
+  #thermal-receipt .rc-small { font-size: ${fs - 2}px; }
 }`;
   }
   const page = p.size === "a5" ? "A5" : "A4";

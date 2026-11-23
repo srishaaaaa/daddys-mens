@@ -62,45 +62,45 @@ export default function CouponCard({ coupon: c, customerName, shop }: { coupon: 
   const dead = c.status !== "active";
 
   return (
-    <main className="min-h-screen flex flex-col items-center px-4 py-10 bg-[radial-gradient(ellipse_at_top,#4A0E12_0%,#220607_55%,#140304_100%)] text-[#F5EFE6]">
+    <main className="min-h-dvh flex flex-col items-center justify-center px-4 py-3 bg-[radial-gradient(ellipse_at_top,#4A0E12_0%,#220607_55%,#140304_100%)] text-[#F5EFE6]">
       <div className="w-full max-w-[460px]">
-        <header className="text-center mb-7">
+        <header className="text-center mb-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.png" alt={shop.name} className="mx-auto h-16 w-16 object-contain mb-3" />
-          <h1 className="text-[26px] font-extrabold tracking-[0.18em] uppercase">{shop.name}</h1>
+          <img src="/logo.png" alt={shop.name} className="mx-auto h-12 w-12 object-contain mb-2" />
+          <h1 className="text-[22px] font-extrabold tracking-[0.18em] uppercase">{shop.name}</h1>
           <p className="mt-1 text-[10px] font-semibold tracking-[0.32em] uppercase text-[#D9B26A]">
             {shop.tagline}
           </p>
         </header>
 
         {customerName && (
-          <p className="text-center text-sm font-semibold text-[#F3D8A0] mb-4">Hi {customerName}, this one&apos;s for you!</p>
+          <p className="text-center text-[13px] font-semibold text-[#F3D8A0] mb-2">Hi {customerName}, this one&apos;s for you!</p>
         )}
 
         <section className={`relative rounded-[26px] overflow-hidden border border-[#D9B26A]/50 shadow-[0_30px_60px_-20px_rgba(0,0,0,.7)] ${dead ? "opacity-80" : ""}`}>
-          <div className="bg-gradient-to-br from-[#C1272D] to-[#8E1B20] px-6 pt-8 pb-10 text-center">
+          <div className="bg-gradient-to-br from-[#C1272D] to-[#8E1B20] px-6 pt-4 pb-6 text-center">
             <p className="text-[11px] font-bold tracking-[0.38em] uppercase text-[#F3D8A0]">A gift for you</p>
-            <p className="mt-2 text-[64px] leading-none font-black text-white">{c.percent}% OFF</p>
-            <p className="mt-2 text-sm font-medium text-[#FBE9E9]">on your next purchase</p>
+            <p className="mt-1 text-[52px] leading-none font-black text-white">{c.percent}% OFF</p>
+            <p className="mt-1 text-[13px] font-medium text-[#FBE9E9]">on your next purchase</p>
           </div>
 
-          <div className="relative bg-[#FAF7F2] px-6 pt-7 pb-8 text-[#4A4038]">
+          <div className="relative bg-[#FAF7F2] px-6 pt-5 pb-4 text-[#4A4038]">
             <span className="absolute -top-3 -left-3 h-6 w-6 rounded-full bg-[#2A0709]" />
             <span className="absolute -top-3 -right-3 h-6 w-6 rounded-full bg-[#2A0709]" />
             <p className="text-center text-[10px] font-extrabold tracking-[0.3em] uppercase text-[#9B7A3A]">Your coupon code</p>
-            <div className="mt-2 rounded-xl border border-[#D9B26A] bg-white py-4 text-center font-mono text-[34px] font-bold tracking-[0.18em] text-[#3A0B0E]">
+            <div className="mt-1.5 rounded-xl border border-[#D9B26A] bg-white py-2.5 text-center font-mono text-[30px] font-bold tracking-[0.18em] text-[#3A0B0E]">
               {c.code}
             </div>
-            <div className="mt-4 flex justify-center">
+            <div className="mt-3 flex justify-center">
               <button
                 onClick={copy}
-                className="inline-flex items-center gap-2 rounded-full border border-[#3A0B0E] px-6 py-2 text-[13px] font-bold text-[#3A0B0E] hover:bg-[#3A0B0E] hover:text-white transition cursor-pointer"
+                className="inline-flex items-center gap-2 rounded-full border border-[#3A0B0E] px-5 py-1.5 text-[13px] font-bold text-[#3A0B0E] hover:bg-[#3A0B0E] hover:text-white transition cursor-pointer"
               >
                 {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                 {copied ? "Copied!" : "Copy code"}
               </button>
             </div>
-            <ul className="mt-6 space-y-2.5 text-[14px] font-medium">
+            <ul className="mt-3 space-y-1 text-[13px] font-medium">
               {rules.map((r) => (
                 <li key={r} className="flex gap-3">
                   <span className="text-[#C1272D]">✦</span>
@@ -118,17 +118,17 @@ export default function CouponCard({ coupon: c, customerName, shop }: { coupon: 
 
         {shop.phone && <a
           href={`tel:+91${shop.phone}`}
-          className="mt-5 block rounded-xl bg-gradient-to-r from-[#D9B26A] to-[#EAD29B] py-4 text-center text-[13px] font-extrabold tracking-[0.25em] uppercase text-[#3A0B0E] shadow-[0_10px_30px_-10px_rgba(217,178,106,.6)]"
+          className="mt-3 block rounded-xl bg-gradient-to-r from-[#D9B26A] to-[#EAD29B] py-3 text-center text-[13px] font-extrabold tracking-[0.25em] uppercase text-[#3A0B0E] shadow-[0_10px_30px_-10px_rgba(217,178,106,.6)]"
         >
           Call the store
         </a>}
         <button
           onClick={saveImage}
-          className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 py-3.5 text-[14px] font-bold text-white hover:bg-white/10 transition cursor-pointer"
+          className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 py-2.5 text-[14px] font-bold text-white hover:bg-white/10 transition cursor-pointer"
         >
           <Download className="w-4 h-4" /> Save coupon as image
         </button>
-        <p className="mt-5 text-center text-xs text-[#E7D9C3]/80">
+        <p className="mt-2 text-center text-[11px] text-[#E7D9C3]/80">
           Show this code at the store or enter it at checkout.{shop.phone ? ` · ${shop.phone}` : ""}
         </p>
       </div>
