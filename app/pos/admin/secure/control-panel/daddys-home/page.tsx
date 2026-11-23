@@ -4823,7 +4823,7 @@ export default function POSBilling() {
         const row = "flex items-center justify-between gap-4 text-[14px]";
         return (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-[560px] max-h-[94vh] overflow-y-auto border border-black/10 animate-in zoom-in-95 duration-200">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-[400px] max-h-[94vh] overflow-y-auto border border-black/10 animate-in zoom-in-95 duration-200">
               {/* Header */}
               <div className="px-7 pt-7 pb-4 border-b border-black/10">
                 <div className="flex items-start justify-between gap-3">

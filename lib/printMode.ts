@@ -49,7 +49,14 @@ export function printCss(p: PrintPrefs): string {
   body, body > div { background: #fff !important; padding: 0 !important; }
   #invoice-doc { width: 100% !important; max-width: 100% !important; box-shadow: none !important; border: 0 !important; border-radius: 0 !important; }
   #invoice-doc .grid { grid-template-columns: 1fr !important; gap: 0.75rem !important; }
-  #invoice-doc table { width: 100% !important; table-layout: auto !important; }
+  #invoice-doc > div:first-child { flex-direction: column !important; align-items: center !important; text-align: center !important; }
+  #invoice-doc > div:first-child * { text-align: center !important; max-width: none !important; }
+  #invoice-doc { padding: 0 !important; }
+  #invoice-doc table { width: 100% !important; min-width: 0 !important; table-layout: auto !important; }
+  #invoice-doc * { min-width: 0 !important; }
+  #invoice-doc [class*="overflow"] { overflow: visible !important; }
+  #invoice-doc th:first-child, #invoice-doc td:first-child { display: none !important; }
+  #invoice-doc th, #invoice-doc td { font-size: 0.8rem !important; padding-top: 0.3rem !important; padding-bottom: 0.3rem !important; }
   #invoice-doc th, #invoice-doc td { padding-left: 0.2rem !important; padding-right: 0.2rem !important; word-break: break-word; }
   #invoice-doc img { max-height: 44px !important; width: auto !important; }
 }`;

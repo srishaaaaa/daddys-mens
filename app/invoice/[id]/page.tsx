@@ -103,14 +103,14 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
 
       <div id="invoice-doc" className="w-full max-w-[780px] bg-white border border-black/10 rounded-2xl shadow-sm print:shadow-none print:border-0 print:rounded-none p-8 sm:p-10 print:p-4">
         {/* Header */}
-        <div className="flex flex-col-reverse sm:flex-row sm:items-start sm:justify-between gap-4">
+        <div className="flex flex-col-reverse sm:flex-row sm:items-start sm:justify-between print:flex-row print:items-start print:justify-between gap-4">
           <div className="min-w-0">
             <h1 className="text-[22px] sm:text-[24px] font-black uppercase tracking-tight leading-tight text-black">{shop.shopName}</h1>
             {shop.address && <p className="mt-2 max-w-sm text-[12.5px] leading-relaxed text-slate-600">{shop.address}</p>}
             {shop.phone && <p className="mt-1.5 text-[12.5px] font-semibold text-slate-800">Phone: +91 {shop.phone}</p>}
             {shop.email && <p className="text-[12.5px] font-semibold text-slate-800">Email: {shop.email}</p>}
           </div>
-          <div className="sm:text-right shrink-0">
+          <div className="sm:text-right print:text-right shrink-0">
             <span className="inline-block rounded-md bg-[#C1272D]/10 px-3.5 py-1.5 text-[12px] font-black uppercase tracking-wider text-[#C1272D]">Invoice</span>
             <p className="mt-2 font-mono text-[12px] font-bold text-slate-800">#{order.id}</p>
             <p className="text-[12.5px] text-slate-500">{date}</p>
@@ -163,7 +163,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
         </div>
 
         {/* Words, payment and totals */}
-        <div className="mt-6 grid grid-cols-1 gap-8 border-t border-black/10 pt-6 sm:grid-cols-2">
+        <div className="mt-6 grid grid-cols-1 gap-8 border-t border-black/10 pt-6 sm:grid-cols-2 print:grid-cols-2">
           <div>
             <p className={lab}>Amount in words</p>
             <p className="mt-1.5 text-[13px] font-bold italic text-black">{rupeesInWords(order.grand_total)}</p>
