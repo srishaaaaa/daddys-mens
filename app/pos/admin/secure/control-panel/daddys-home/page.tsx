@@ -39,12 +39,14 @@ import {
   RefreshCw,
   MessageCircle,
   Star,
+  Settings as SettingsIcon,
 } from "lucide-react";
 import InstallAppButton from "@/app/install-app-button";
 import InventoryPanel from "./InventoryPanel";
 import CouponsPanel from "./CouponsPanel";
 import LoyaltyPanel from "./LoyaltyPanel";
 import ExpensesPanel from "./ExpensesPanel";
+import SettingsPanel from "./SettingsPanel";
 import { loyaltyLookupAction, loyaltyRegisterAction, loyaltySettleAction } from "@/app/pos/loyalty-actions";
 import { pointsValue, redeemCap } from "@/lib/loyalty/engine";
 import type { LoyaltyLookup } from "@/lib/loyalty/types";
@@ -339,7 +341,7 @@ export default function POSBilling() {
 
   const [activeCategory, setActiveCategory] = useState<string>("ALL");
   const [activeTab, setActiveTab] = useState<
-    "billing" | "orders" | "analytics" | "inventory" | "coupons" | "loyalty" | "expenses"
+    "billing" | "orders" | "analytics" | "inventory" | "coupons" | "loyalty" | "expenses" | "settings"
   >("billing");
   const [isOnline, setIsOnline] = useState(false);
   const [customerName, setCustomerName] = useState("");
@@ -488,7 +490,7 @@ export default function POSBilling() {
     setIsAuthorized(false);
   };
 
-  const selectTab = (tab: "billing" | "orders" | "analytics" | "inventory" | "coupons" | "loyalty" | "expenses") => {
+  const selectTab = (tab: "billing" | "orders" | "analytics" | "inventory" | "coupons" | "loyalty" | "expenses" | "settings") => {
     setActiveTab(tab);
     // On mobile/tablet the sidebar is an overlay — close it after navigating.
     if (typeof window !== "undefined" && window.innerWidth < 1024) {
@@ -1985,6 +1987,17 @@ export default function POSBilling() {
                     Expense Tracker
                   </button>
                   <button
+                    onClick={() => selectTab("settings")}
+                    className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+                      activeTab === "settings"
+                        ? "bg-[#FFFFFF] text-[#C1272D] shadow-lg scale-102"
+                        : "text-white font-bold hover:bg-white/10 hover:text-white"
+                    }`}
+                  >
+                    <SettingsIcon className="w-5 h-5" />
+                    Settings
+                  </button>
+                  <button
                     onClick={() => selectTab("analytics")}
                     className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
                       activeTab === "analytics"
@@ -2940,7 +2953,7 @@ export default function POSBilling() {
                         ) : (
                           !upiCfg && (
                             <p className="mt-3 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-[11px] font-semibold text-amber-800">
-                              Add SHOP_UPI_ID (and SHOP_UPI_NAME / SHOP_UPI_PHONE) to the .env file to show the counter QR.
+                              Add your UPI ID in Settings to show the counter QR.
                             </p>
                           )
                         )}
@@ -3014,6 +3027,7 @@ export default function POSBilling() {
         {role === "admin" && activeTab === "inventory" && <InventoryPanel />}
         {role === "admin" && activeTab === "coupons" && <CouponsPanel />}
         {role === "admin" && activeTab === "expenses" && <ExpensesPanel />}
+        {role === "admin" && activeTab === "settings" && <SettingsPanel />}
         {activeTab === "loyalty" && <LoyaltyPanel admin={role === "admin"} />}
 
         {role === "admin" && activeTab === "orders" && (

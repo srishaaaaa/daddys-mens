@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { couponStatus, type Coupon } from "@/lib/couponTypes";
+import { getPublicUrlAction } from "@/app/pos/settings-actions";
 import {
   deleteCouponAction,
   listCouponsAction,
@@ -414,10 +415,14 @@ function SendCoupon({ coupon: c, onClose, onSent }: { coupon: Coupon; onClose: (
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
   const [only, setOnly] = useState(c.restricted);
+  const [siteUrl, setSiteUrl] = useState("");
+  useEffect(() => {
+    getPublicUrlAction().then(setSiteUrl).catch(() => {});
+  }, []);
   const [busy, setBusy] = useState(false);
   const ok = /^[6-9]\d{9}$/.test(phone);
   const who = name.trim();
-  const base = (process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== "undefined" ? window.location.origin : "")).replace(/\/$/, "");
+  const base = (siteUrl || process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== "undefined" ? window.location.origin : "")).replace(/\/$/, "");
   const link = `${base}/coupon/${c.code}${who ? `?n=${encodeURIComponent(who)}` : ""}`;
   const message = [
     `Dear ${who || "Customer"},`,

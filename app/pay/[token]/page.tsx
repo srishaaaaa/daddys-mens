@@ -17,7 +17,7 @@ export default async function PayPage({ params }: { params: Promise<{ token: str
     raw = decodeURIComponent(token);
   } catch {}
   const r = readPayLink(raw);
-  const upi = getUpiConfig();
+  const upi = await getUpiConfig();
 
   const note = !r.ok
     ? r.expired
