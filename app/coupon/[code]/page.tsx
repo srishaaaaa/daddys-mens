@@ -17,13 +17,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const shop = await getShopProfile();
   if (!c) return { title: `Coupon — ${shop.shopName}` };
   const title = `${c.percent}% OFF at ${shop.shopName}`;
+  // WhatsApp needs an absolute address for the preview picture.
+  const logo = shop.publicUrl ? `${shop.publicUrl}/logo.png` : "/logo.png";
   const description = `Your code: ${c.code}${c.minOrder ? ` · valid on purchases of ₹${c.minOrder.toLocaleString("en-IN")} or more` : ""}`;
   // WhatsApp builds the link preview from these tags.
   return {
     title,
     description,
-    openGraph: { title, description, siteName: shop.shopName, images: ["/logo.png"] },
-    twitter: { card: "summary", title, description, images: ["/logo.png"] },
+    openGraph: { title, description, siteName: shop.shopName, images: [logo] },
+    twitter: { card: "summary", title, description, images: [logo] },
     robots: { index: false, follow: false },
   };
 }

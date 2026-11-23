@@ -41,15 +41,28 @@ export async function drawCouponCanvas(c: CouponArt): Promise<HTMLCanvasElement>
   g.fillStyle = bg;
   g.fillRect(0, 0, W, H);
 
+  // The shop logo above the name (skipped quietly if it can't be loaded).
+  try {
+    const img = new Image();
+    img.src = "/logo.png";
+    await img.decode();
+    g.save();
+    g.beginPath();
+    g.roundRect(W / 2 - 42, 28, 84, 84, 16);
+    g.clip();
+    g.drawImage(img, W / 2 - 42, 28, 84, 84);
+    g.restore();
+  } catch {}
+
   g.textAlign = "center";
   g.fillStyle = "#F5EFE6";
-  g.font = font(800, 56);
-  g.fillText((c.shopName ?? "Daddy's Home").toUpperCase().slice(0, 28), W / 2, 120);
+  g.font = font(800, 52);
+  g.fillText((c.shopName ?? "Daddy's Home").toUpperCase().slice(0, 28), W / 2, 172);
   g.fillStyle = "#D9B26A";
   g.font = font(600, 26);
-  g.fillText((c.tagline ?? "Premium Menswear & Accessories").toUpperCase().slice(0, 44), W / 2, 168);
+  g.fillText((c.tagline ?? "Premium Menswear & Accessories").toUpperCase().slice(0, 44), W / 2, 208);
 
-  const x = 90, y = 230, w = W - 180, h = 900;
+  const x = 90, y = 250, w = W - 180, h = 900;
   g.save();
   g.beginPath();
   g.roundRect(x, y, w, h, 44);

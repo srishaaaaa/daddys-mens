@@ -1614,7 +1614,7 @@ export default function POSBilling() {
           {/* Left Side Branding */}
           <div className="w-full lg:w-1/2 flex flex-col items-center lg:items-start text-center lg:text-left">
             <div className="w-24 h-24 bg-white/5 backdrop-blur-xl rounded-3xl p-4 border border-white/10 shadow-2xl mb-8 group hover:scale-105 transition-transform duration-500">
-              <img src="/logo.jpg" alt="Logo" className="w-full h-full object-contain drop-shadow-lg group-hover:rotate-12 transition-transform duration-500" />
+              <img src="/logo.png" alt="Logo" className="w-full h-full object-contain drop-shadow-lg group-hover:rotate-12 transition-transform duration-500" />
             </div>
             <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/5 border border-white/10 rounded-full mb-6 backdrop-blur-md">
               <span className="w-2 h-2 rounded-full bg-[#C1272D] animate-pulse" />
@@ -1989,7 +1989,7 @@ export default function POSBilling() {
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 bg-[#1A1A1A] border border-white/10 rounded-xl flex items-center justify-center overflow-hidden shrink-0">
                   <img
-                    src="/logo.jpg"
+                    src="/logo.png"
                     alt="Logo"
                     className="w-full h-full object-cover"
                   />
@@ -2024,17 +2024,6 @@ export default function POSBilling() {
                 <Receipt className="w-5 h-5" />
                 Billing Panel
               </button>
-              <button
-                onClick={() => selectTab("loyalty")}
-                className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
-                  activeTab === "loyalty"
-                    ? "bg-[#FFFFFF] text-[#C1272D] shadow-lg scale-102"
-                    : "text-white font-bold hover:bg-white/10 hover:text-white"
-                }`}
-              >
-                <Star className="w-5 h-5" />
-                Loyalty
-              </button>
               {role === 'admin' && (
                 <>
                   <button
@@ -2060,15 +2049,15 @@ export default function POSBilling() {
                     Inventory
                   </button>
                   <button
-                    onClick={() => selectTab("coupons")}
+                    onClick={() => selectTab("analytics")}
                     className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
-                      activeTab === "coupons"
+                      activeTab === "analytics"
                         ? "bg-[#FFFFFF] text-[#C1272D] shadow-lg scale-102"
                         : "text-white font-bold hover:bg-white/10 hover:text-white"
                     }`}
                   >
-                    <Percent className="w-5 h-5" />
-                    Coupons
+                    <BarChart2 className="w-5 h-5" />
+                    Analytics Dashboard
                   </button>
                   <button
                     onClick={() => selectTab("expenses")}
@@ -2082,28 +2071,41 @@ export default function POSBilling() {
                     Expense Tracker
                   </button>
                   <button
-                    onClick={() => selectTab("settings")}
+                    onClick={() => selectTab("coupons")}
                     className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
-                      activeTab === "settings"
+                      activeTab === "coupons"
                         ? "bg-[#FFFFFF] text-[#C1272D] shadow-lg scale-102"
                         : "text-white font-bold hover:bg-white/10 hover:text-white"
                     }`}
                   >
-                    <SettingsIcon className="w-5 h-5" />
-                    Settings
-                  </button>
-                  <button
-                    onClick={() => selectTab("analytics")}
-                    className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
-                      activeTab === "analytics"
-                        ? "bg-[#FFFFFF] text-[#C1272D] shadow-lg scale-102"
-                        : "text-white font-bold hover:bg-white/10 hover:text-white"
-                    }`}
-                  >
-                    <BarChart2 className="w-5 h-5" />
-                    Analytics Dashboard
+                    <Percent className="w-5 h-5" />
+                    Coupons
                   </button>
                 </>
+              )}
+              <button
+                onClick={() => selectTab("loyalty")}
+                className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+                  activeTab === "loyalty"
+                    ? "bg-[#FFFFFF] text-[#C1272D] shadow-lg scale-102"
+                    : "text-white font-bold hover:bg-white/10 hover:text-white"
+                }`}
+              >
+                <Star className="w-5 h-5" />
+                Loyalty
+              </button>
+              {role === 'admin' && (
+                <button
+                  onClick={() => selectTab("settings")}
+                  className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+                    activeTab === "settings"
+                      ? "bg-[#FFFFFF] text-[#C1272D] shadow-lg scale-102"
+                      : "text-white font-bold hover:bg-white/10 hover:text-white"
+                  }`}
+                >
+                  <SettingsIcon className="w-5 h-5" />
+                  Settings
+                </button>
               )}
 
               <div className="pt-4 border-t border-white/10 mt-4">
