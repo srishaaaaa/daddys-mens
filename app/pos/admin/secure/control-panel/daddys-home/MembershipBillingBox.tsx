@@ -6,6 +6,9 @@ import {
   customerStats, eligibleOffer, fmtYmd, liveOffer, memberDiscount, stateOf, todayIST,
   type EligibilityBasis, type Member, type Offer, type Plan, type Source,
 } from "@/lib/membershipTypes";
+
+/** The discount the cashier is applying: the plan's percentage, the extra offer percentage, and the total. */
+export type AppliedDiscount = { pct: number; offerPct: number; total: number; birthday: boolean };
 import { waLink } from "@/lib/membershipMessages";
 import { eligibilityMessageAction, markMessageAction } from "@/app/pos/membership-actions";
 import { unwrap } from "@/lib/actionResult";
@@ -23,22 +26,27 @@ const rupee = (n: number) => `₹${n.toLocaleString("en-IN", { maximumFractionDi
    - not a member and not eligible: a button to enrol them by hand;
    - expired or switched off: a note, and no member discount. */
 export default function MembershipBillingBox({
-  phone, name, members, plans, basis, bills, billSubtotal, billDiscount, applied, pending, onPending, onApply, onRemove, onRegistered,
+  phone, name, members, plans, basis, countCurrent, bills, billSubtotal, billDiscount, eligibleAmount, restricted, applied, pending, onPending, onApply, onRemove, onRegistered,
 }: {
   phone: string;
   name: string;
   members: Member[];
   plans: Plan[];
   basis: EligibilityBasis;
+  /** the bill being made counts toward total-purchases eligibility */
+  countCurrent: boolean;
   bills: BillRow[];
   /** the current bill, before and after its discounts */
   billSubtotal: number;
   billDiscount: number;
+  /** the part of the bill the member discount applies to (all of it unless the plan is restricted to some items) */
+  eligibleAmount: number;
+  restricted: boolean;
   /** the member discount is currently on this bill */
   applied: boolean;
   pending: PendingEnroll | null;
   onPending: (p: PendingEnroll | null) => void;
-  onApply: (m: Member, pct: number, birthday: boolean) => void;
+  onApply: (m: Member, disc: AppliedDiscount) => void;
   onRemove: () => void;
   onRegistered: (r: Result) => void;
 }) {
@@ -51,8 +59,8 @@ export default function MembershipBillingBox({
   // What this bill counts for: the subtotal, or the subtotal after discounts.
   const billAmount = basis === "subtotal" ? billSubtotal : Math.max(0, billSubtotal - billDiscount);
   const offer: Offer | null = useMemo(
-    () => (phone.length === 10 && billSubtotal > 0 ? eligibleOffer({ plans, member: m, pastTotal, billAmount, today }) : null),
-    [plans, m, pastTotal, billAmount, today, phone, billSubtotal],
+    () => (phone.length === 10 && billSubtotal > 0 ? eligibleOffer({ plans, member: m, pastTotal, billAmount, today, countCurrentBill: countCurrent }) : null),
+    [plans, m, pastTotal, billAmount, today, phone, billSubtotal, countCurrent],
   );
 
   if (phone.length !== 10) return null;
@@ -161,10 +169,13 @@ export default function MembershipBillingBox({
   }
 
   /* ------------------------------------------------ active member */
-  const disc = memberDiscount(m, billSubtotal, today);
+  const found = memberDiscount(m, billSubtotal, today);
+  const nothingEligible = restricted && eligibleAmount <= 0;
+  const disc = found && !nothingEligible ? found : null;
   const base = memberDiscount(m, Number.MAX_SAFE_INTEGER, today); // the discount if the bill were big enough
   const extra = liveOffer(m, today);
-  const amount = disc ? (billSubtotal * disc.pct) / 100 : 0;
+  const only = [...m.onlyCategories, ...m.onlyProducts];
+  const amt = (pct: number) => (eligibleAmount * pct) / 100;
   return (
     <>
       <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
@@ -186,23 +197,27 @@ export default function MembershipBillingBox({
             applied ? (
               <button type="button" onClick={onRemove} className="cursor-pointer text-[11px] font-bold uppercase tracking-wider text-emerald-900 underline">Remove discount</button>
             ) : (
-              <button type="button" onClick={() => onApply(m, disc.pct, disc.birthday)} className="inline-flex h-9 cursor-pointer items-center rounded-lg bg-emerald-700 px-4 text-[11px] font-extrabold uppercase tracking-wider text-white hover:bg-emerald-800">
-                Apply {disc.pct}% member discount
+              <button type="button" onClick={() => onApply(m, disc)} className="inline-flex h-9 cursor-pointer items-center rounded-lg bg-emerald-700 px-4 text-[11px] font-extrabold uppercase tracking-wider text-white hover:bg-emerald-800">
+                Apply {disc.total}% member discount
               </button>
             )
+          ) : nothingEligible ? (
+            <span className="text-[12px] font-semibold text-emerald-800">No item on this bill qualifies{only.length ? ` (only ${only.join(", ")})` : ""}</span>
           ) : base && m.minBill > billSubtotal ? (
-            <span className="text-[12px] font-semibold text-emerald-800">Add {rupee(m.minBill - billSubtotal)} more to get {base.pct}% off</span>
+            <span className="text-[12px] font-semibold text-emerald-800">Add {rupee(m.minBill - billSubtotal)} more to get {base.total}% off</span>
           ) : (
             <span className="text-[12px] font-semibold text-emerald-800">This plan has no discount.</span>
           )}
         </div>
         {disc && applied && (
-          <dl className="mt-3 grid grid-cols-3 gap-2 rounded-lg bg-white/70 px-3 py-2 text-[12px]">
-            <div><dt className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Original</dt><dd className="font-bold text-black">{rupee(billSubtotal)}</dd></div>
-            <div><dt className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{m.planName || "Member"} {disc.pct}%</dt><dd className="font-bold text-[#C1272D]">−{rupee(amount)}</dd></div>
-            <div><dt className="text-[10px] font-bold uppercase tracking-wider text-slate-500">After discount</dt><dd className="font-bold text-emerald-800">{rupee(billSubtotal - amount)}</dd></div>
+          <dl className={`mt-3 grid gap-2 rounded-lg bg-white/70 px-3 py-2 text-[12px] ${disc.offerPct > 0 ? "grid-cols-4" : "grid-cols-3"}`}>
+            <div><dt className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{restricted ? "Eligible items" : "Original"}</dt><dd className="font-bold text-black">{rupee(restricted ? eligibleAmount : billSubtotal)}</dd></div>
+            <div><dt className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{m.planName || "Member"} {disc.pct}%</dt><dd className="font-bold text-[#C1272D]">−{rupee(amt(disc.pct))}</dd></div>
+            {disc.offerPct > 0 && <div><dt className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Offer {disc.offerPct}%</dt><dd className="font-bold text-[#C1272D]">−{rupee(amt(disc.offerPct))}</dd></div>}
+            <div><dt className="text-[10px] font-bold uppercase tracking-wider text-slate-500">After discount</dt><dd className="font-bold text-emerald-800">{rupee(billSubtotal - amt(disc.total))}</dd></div>
           </dl>
         )}
+        {only.length > 0 && <p className="mt-2 text-[11.5px] text-emerald-800">Member discount applies only to: {only.join(", ")}.</p>}
         {extra && <p className="mt-2 text-[12px] font-semibold text-emerald-900">Member offer: {extra}</p>}
       </div>
       {offer && banner(offer)}

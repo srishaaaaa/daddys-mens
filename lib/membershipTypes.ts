@@ -26,6 +26,11 @@ export type Plan = {
   offerText: string;
   /** the extra offer stops showing after this date (yyyy-mm-dd; empty = no end) */
   offerValidUntil: string | null;
+  /** an extra discount on top of the member discount while the offer is valid (0 = none); shown as its own line */
+  offerPct: number;
+  /** the discount applies only to these categories / products (both empty = every item) */
+  onlyCategories: string[];
+  onlyProducts: string[];
 };
 
 export type PaymentStatus = "paid" | "pending";
@@ -43,6 +48,9 @@ export type Member = {
   minBill: number;
   offerText: string;
   offerValidUntil: string | null;
+  offerPct: number;
+  onlyCategories: string[];
+  onlyProducts: string[];
   joinedAt: string; // ISO
   /** yyyy-mm-dd; null = never expires (memberships from before plans existed) */
   expiresAt: string | null;
@@ -65,11 +73,13 @@ export type MemberSettings = {
   msgExpiry: boolean;
   msgEligibility: boolean;
   msgOffers: boolean;
+  /** the bill being made counts toward total-purchases eligibility */
+  countCurrentBill: boolean;
   /** days before expiry to remind (0 = on the day) */
   reminderDays: number[];
 };
 export const DEFAULT_SETTINGS: MemberSettings = {
-  basis: "net", msgActivation: true, msgUpgrade: true, msgRenewal: true, msgExpiry: true, msgEligibility: true, msgOffers: true, reminderDays: [7, 3, 0],
+  basis: "net", msgActivation: true, msgUpgrade: true, msgRenewal: true, msgExpiry: true, msgEligibility: true, msgOffers: true, countCurrentBill: true, reminderDays: [7, 3, 0],
 };
 
 export type MemberEvent = {
@@ -138,13 +148,35 @@ export const fmtYmd = (ymd: string | null) => {
 /* ---------------------------------------------------------------- discounts on a bill */
 
 /** What a member's discount would be on a bill of `subtotal`, today. None when expired / switched off / the bill
-    is smaller than the plan's minimum. On their birthday the higher birthday discount is used instead (never added). */
-export function memberDiscount(m: Member, subtotal: number, today = todayIST()): { pct: number; birthday: boolean } | null {
+    is smaller than the plan's minimum. On their birthday the higher birthday discount replaces the member discount
+    (never added). The plan's extra offer percentage, while valid, is added and shown as its own line. */
+export function memberDiscount(m: Member, subtotal: number, today = todayIST()): { pct: number; offerPct: number; total: number; birthday: boolean } | null {
   if (stateOf(m, today) !== "active") return null;
   if (m.minBill > 0 && subtotal < m.minBill) return null;
   const isBirthday = !!m.birthday && m.birthday.slice(5) === today.slice(5);
-  if (isBirthday && m.birthdayPct > m.discountPct) return { pct: m.birthdayPct, birthday: true };
-  return m.discountPct > 0 ? { pct: m.discountPct, birthday: false } : null;
+  const birthday = isBirthday && m.birthdayPct > m.discountPct;
+  const pct = birthday ? m.birthdayPct : m.discountPct;
+  const offerPct = m.offerPct > 0 && (!m.offerValidUntil || m.offerValidUntil >= today) ? m.offerPct : 0;
+  const total = Math.min(100, pct + offerPct);
+  return total > 0 ? { pct, offerPct, total, birthday } : null;
+}
+
+export type Line = { name: string; price: number; qty: number };
+
+/** The part of a bill the member discount applies to: every item, or only the items in the plan's categories / products. */
+export function eligibleAmount(
+  plan: Pick<Member, "onlyCategories" | "onlyProducts">, lines: Line[], categoryOf: (name: string) => string,
+): { amount: number; restricted: boolean } {
+  const cats = new Set(plan.onlyCategories.map((c) => c.trim().toLowerCase()));
+  const prods = new Set(plan.onlyProducts.map((p) => p.trim().toLowerCase()));
+  const restricted = cats.size + prods.size > 0;
+  let amount = 0;
+  for (const l of lines) {
+    if (!l.name || !(l.price > 0)) continue;
+    const key = l.name.trim().toLowerCase();
+    if (!restricted || prods.has(key) || cats.has(categoryOf(l.name).trim().toLowerCase())) amount += l.price * l.qty;
+  }
+  return { amount: Math.round(amount * 100) / 100, restricted };
 }
 
 /** The plan's extra offer text, while it is still valid. */
@@ -153,12 +185,12 @@ export const liveOffer = (m: Pick<Member, "offerText" | "offerValidUntil">, toda
 
 /* ---------------------------------------------------------------- purchases (one definition used everywhere) */
 
-export type Bill = { id: string; phone: string; subtotal: number; discount: number; completed: boolean; date: string; total: number };
+export type Bill = { id: string; phone: string; subtotal: number; discount: number; completed: boolean; date: string; total: number; /** money handed back on this bill */ refund?: number };
 
 /** The amount of a bill that counts toward membership: after discounts ("net") or before ("subtotal").
-    The membership fee, delivery and GST are never part of it. */
-export const billValue = (b: Pick<Bill, "subtotal" | "discount">, basis: EligibilityBasis) =>
-  basis === "subtotal" ? b.subtotal : Math.max(0, b.subtotal - b.discount);
+    Money refunded on the bill is taken off. The membership fee, delivery and GST are never part of it. */
+export const billValue = (b: Pick<Bill, "subtotal" | "discount" | "refund">, basis: EligibilityBasis) =>
+  Math.max(0, (basis === "subtotal" ? b.subtotal : b.subtotal - b.discount) - (b.refund ?? 0));
 
 export type CustomerStats = { phone: string; name: string; total: number; maxBill: number; bills: number; last: string };
 
@@ -191,14 +223,14 @@ export type Offer = { plan: Plan; via: "single_bill" | "cumulative"; cumulative:
 /** The best plan this customer qualifies for on this bill, and what to do about it:
     activate (not a member), upgrade (active member, better plan) or renew (expired / switched off). */
 export function eligibleOffer(args: {
-  plans: Plan[]; member: Member | undefined; pastTotal: number; billAmount: number; today?: string;
+  plans: Plan[]; member: Member | undefined; pastTotal: number; billAmount: number; today?: string; countCurrentBill?: boolean;
 }): Offer | null {
   const { plans, member, pastTotal, billAmount } = args;
   const today = args.today ?? todayIST();
   let best: Offer | null = null;
   for (const p of plans) {
     if (!p.active || p.eligibility === "manual" || p.threshold <= 0) continue;
-    const cumulative = pastTotal + billAmount;
+    const cumulative = pastTotal + (args.countCurrentBill === false ? 0 : billAmount);
     const via = p.eligibility === "single_bill" ? (billAmount >= p.threshold ? "single_bill" : null) : cumulative >= p.threshold ? "cumulative" : null;
     if (!via) continue;
     if (!best || rank(p) > rank(best.plan)) best = { plan: p, via, cumulative, kind: "activate" };

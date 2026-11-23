@@ -96,8 +96,8 @@ function printCard(m: Member, shop: string) {
 
 /* ------------------------------------------------------------------ the panel */
 export default function MembershipPanel({
-  shop, admin, data, setData, bills,
-}: { shop: string; admin: boolean; data: Overview; setData: React.Dispatch<React.SetStateAction<Overview>>; bills: BillRow[] }) {
+  shop, admin, data, setData, bills, categories, productNames,
+}: { shop: string; admin: boolean; data: Overview; setData: React.Dispatch<React.SetStateAction<Overview>>; bills: BillRow[]; categories: string[]; productNames: string[] }) {
   const [loaded, setLoaded] = useState(data.members.length > 0 || data.plans.length > 0);
   const [q, setQ] = useState("");
   const [registering, setRegistering] = useState<null | { phone?: string; name?: string; planId?: string; source?: Source }>(null);
@@ -366,7 +366,7 @@ export default function MembershipPanel({
         />
       )}
 
-      {plansOpen && <PlansModal plans={plans} onClose={() => setPlansOpen(false)} onChange={(p) => setData((d) => ({ ...d, plans: d.plans.some((x) => x.id === p.id) ? d.plans.map((x) => (x.id === p.id ? p : x)) : [...d.plans, p] }))} />}
+      {plansOpen && <PlansModal plans={plans} categories={categories} productNames={productNames} onClose={() => setPlansOpen(false)} onChange={(p) => setData((d) => ({ ...d, plans: d.plans.some((x) => x.id === p.id) ? d.plans.map((x) => (x.id === p.id ? p : x)) : [...d.plans, p] }))} />}
       {settingsOpen && <SettingsModal settings={settings} onClose={() => setSettingsOpen(false)} onSaved={(s) => setData((d) => ({ ...d, settings: s }))} />}
       {offerOpen && <OfferModal plans={activePlans} onClose={() => setOfferOpen(false)} onQueued={async () => { const o = await membershipOverviewAction(); setData(o); }} />}
 
@@ -389,7 +389,7 @@ export default function MembershipPanel({
             <Info k="Plan" v={open.planName || "—"} />
             <Info k="Joined" v={fmtYmd(open.joinedAt.slice(0, 10))} />
             <Info k="Valid until" v={open.expiresAt ? fmtYmd(open.expiresAt) : "No expiry"} />
-            <Info k="Member discount" v={open.discountPct ? `${open.discountPct}%${open.birthdayPct ? ` · ${open.birthdayPct}% on birthday` : ""}${open.minBill ? ` · bills of ${rupee(open.minBill)}+` : ""}` : "None"} />
+            <Info k="Member discount" v={open.discountPct ? `${open.discountPct}%${open.offerPct ? ` + ${open.offerPct}% offer` : ""}${open.birthdayPct ? ` · ${open.birthdayPct}% on birthday` : ""}${open.minBill ? ` · bills of ${rupee(open.minBill)}+` : ""}${open.onlyCategories.length + open.onlyProducts.length ? ` · only ${[...open.onlyCategories, ...open.onlyProducts].join(", ")}` : ""}` : "None"} />
             <Info k="Status" v={<StatePill s={stateOf(open, today)} />} />
             <Info k="Joined through" v={SOURCE_LABEL[open.source]} />
             <Info k="Total purchases" v={rupee(stats.get(open.phone)?.total ?? 0)} />
@@ -727,8 +727,9 @@ function UpgradeModal({ m, plans, onClose, onDone }: { m: Member; plans: Plan[];
 type PlanForm = {
   id?: string; name: string; fee: string; validity: string; custom: string; discountPct: string; birthdayPct: string; description: string; active: boolean;
   eligibility: Eligibility; threshold: string; minBill: string; offerText: string; offerValidUntil: string;
+  offerPct: string; onlyCategories: string[]; onlyProducts: string[];
 };
-const NEW_PLAN: PlanForm = { name: "", fee: "0", validity: "12", custom: "", discountPct: "10", birthdayPct: "0", description: "", active: true, eligibility: "manual", threshold: "", minBill: "0", offerText: "", offerValidUntil: "" };
+const NEW_PLAN: PlanForm = { name: "", fee: "0", validity: "12", custom: "", discountPct: "10", birthdayPct: "0", description: "", active: true, eligibility: "manual", threshold: "", minBill: "0", offerText: "", offerValidUntil: "", offerPct: "0", onlyCategories: [], onlyProducts: [] };
 const VALIDITY = [["3", "3 months"], ["6", "6 months"], ["12", "1 year"], ["custom", "Custom…"]] as const;
 const ELIG_LABEL: Record<Eligibility, string> = { manual: "Manual — staff enrol the customer", single_bill: "Single bill — one bill reaches the amount", cumulative: "Total purchases — all bills add up to the amount" };
 
@@ -736,9 +737,10 @@ const toForm = (p: Plan): PlanForm => ({
   id: p.id, name: p.name, fee: String(p.fee), validity: ["3", "6", "12"].includes(String(p.months)) ? String(p.months) : "custom",
   custom: ["3", "6", "12"].includes(String(p.months)) ? "" : String(p.months), discountPct: String(p.discountPct), birthdayPct: String(p.birthdayPct), description: p.description, active: p.active,
   eligibility: p.eligibility, threshold: p.threshold ? String(p.threshold) : "", minBill: String(p.minBill), offerText: p.offerText, offerValidUntil: p.offerValidUntil ?? "",
+  offerPct: String(p.offerPct), onlyCategories: p.onlyCategories, onlyProducts: p.onlyProducts,
 });
 
-function PlansModal({ plans, onClose, onChange }: { plans: Plan[]; onClose: () => void; onChange: (p: Plan) => void }) {
+function PlansModal({ plans, categories, productNames, onClose, onChange }: { plans: Plan[]; categories: string[]; productNames: string[]; onClose: () => void; onChange: (p: Plan) => void }) {
   const [f, setF] = useState<PlanForm | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -751,6 +753,7 @@ function PlansModal({ plans, onClose, onChange }: { plans: Plan[]; onClose: () =
       onChange(await unwrap(savePlanAction({
         id: form.id, name: form.name, fee: Number(form.fee), months, discountPct: Number(form.discountPct), birthdayPct: Number(form.birthdayPct || 0), description: form.description, active: form.active,
         eligibility: form.eligibility, threshold: Number(form.threshold || 0), minBill: Number(form.minBill || 0), offerText: form.offerText, offerValidUntil: form.offerValidUntil || null,
+        offerPct: Number(form.offerPct || 0), onlyCategories: form.onlyCategories, onlyProducts: form.onlyProducts,
       })));
       setF(null);
     } catch (x) {
@@ -818,6 +821,16 @@ function PlansModal({ plans, onClose, onChange }: { plans: Plan[]; onClose: () =
               <label className={labelCls}>Extra offer valid until (optional)</label>
               <input className={field} type="date" value={f.offerValidUntil} onChange={(e) => setF({ ...f, offerValidUntil: e.target.value })} />
             </div>
+            <div>
+              <label className={labelCls}>Extra offer discount (%, optional)</label>
+              <input className={field} type="number" min={0} max={100} step="0.01" value={f.offerPct} onChange={(e) => setF({ ...f, offerPct: e.target.value })} />
+              <p className="mt-1 text-[11.5px] text-slate-500">Added to the member discount while the offer is valid, and shown as its own line on the bill.</p>
+            </div>
+            <div className="sm:col-span-2 space-y-3 rounded-xl bg-[#F6F3E9] p-4">
+              <p className="text-[11.5px] font-bold text-slate-700">Discount applies to (leave both empty = every item)</p>
+              <ChipPicker label="Only these categories" options={categories} value={f.onlyCategories} onChange={(v) => setF({ ...f, onlyCategories: v })} />
+              <ChipPicker label="Only these products" options={productNames} value={f.onlyProducts} onChange={(v) => setF({ ...f, onlyProducts: v })} />
+            </div>
             <div className="sm:col-span-2">
               <label className={labelCls}>Extra offer / benefit (optional)</label>
               <input className={field} maxLength={120} placeholder="e.g. Free alteration, early access to sales" value={f.offerText} onChange={(e) => setF({ ...f, offerText: e.target.value })} />
@@ -846,7 +859,7 @@ function PlansModal({ plans, onClose, onChange }: { plans: Plan[]; onClose: () =
                   <p className="text-[14px] font-extrabold text-black">{p.name} {!p.active && <span className="ml-1 text-[10px] font-bold uppercase text-slate-500">(inactive)</span>}</p>
                   <p className="text-[12px] text-slate-600">
                     {p.fee ? rupee(p.fee) : "Free"} · {monthsLabel(p.months)} · {p.discountPct}% off{p.birthdayPct ? ` · ${p.birthdayPct}% on birthday` : ""}
-                    {p.eligibility === "single_bill" ? ` · one bill of ${rupee(p.threshold)}+` : p.eligibility === "cumulative" ? ` · ${rupee(p.threshold)} total purchases` : " · manual enrolment"}
+                    {p.offerPct ? ` + ${p.offerPct}% offer` : ""}{p.eligibility === "single_bill" ? ` · one bill of ${rupee(p.threshold)}+` : p.eligibility === "cumulative" ? ` · ${rupee(p.threshold)} total purchases` : " · manual enrolment"}{p.onlyCategories.length + p.onlyProducts.length ? ` · only ${[...p.onlyCategories, ...p.onlyProducts].join(", ")}` : ""}
                   </p>
                   {(p.offerText || p.description) && <p className="mt-0.5 text-[12px] text-slate-500">{p.offerText || p.description}</p>}
                 </div>
@@ -862,6 +875,27 @@ function PlansModal({ plans, onClose, onChange }: { plans: Plan[]; onClose: () =
         </div>
       )}
     </Modal>
+  );
+}
+
+/** A list of chosen items shown as chips, with a dropdown to add more. */
+function ChipPicker({ label, options, value, onChange }: { label: string; options: string[]; value: string[]; onChange: (v: string[]) => void }) {
+  const left = options.filter((o) => !value.some((v) => v.toLowerCase() === o.toLowerCase()));
+  return (
+    <div>
+      <p className="mb-1 text-[10.5px] font-bold uppercase tracking-[0.12em] text-slate-600">{label}</p>
+      {value.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {value.map((v) => (
+            <button key={v} type="button" onClick={() => onChange(value.filter((x) => x !== v))} title="Remove" className="cursor-pointer rounded-full border border-[#C1272D]/30 bg-[#FBEFEF] px-2.5 py-1 text-[11.5px] font-bold text-[#C1272D]">{v} ✕</button>
+          ))}
+        </div>
+      )}
+      <select className={field} value="" onChange={(e) => e.target.value && onChange([...value, e.target.value])}>
+        <option value="">{left.length ? "Add…" : value.length ? "Nothing more to add" : "None available"}</option>
+        {left.map((o) => <option key={o} value={o}>{o}</option>)}
+      </select>
+    </div>
   );
 }
 
@@ -901,6 +935,10 @@ function SettingsModal({ settings, onClose, onSaved }: { settings: MemberSetting
           </select>
           <p className="mt-1 text-[11.5px] text-slate-500">Used everywhere: billing offers, the member list, analytics. The membership fee, delivery and GST are never counted. Only completed bills count.</p>
         </div>
+        <label className="flex cursor-pointer items-start justify-between gap-3 rounded-xl border border-black/10 bg-white px-4 py-3 text-[13px] font-semibold text-slate-800">
+          <span>Count the bill being made toward total-purchases eligibility<span className="mt-0.5 block text-[11.5px] font-normal text-slate-500">On: a customer is offered a plan on the bill that takes them over the amount. Off: only bills already completed count.</span></span>
+          <input type="checkbox" className="mt-1 h-4 w-4 accent-[#C1272D]" checked={s.countCurrentBill} onChange={(e) => setS({ ...s, countCurrentBill: e.target.checked })} />
+        </label>
         <div>
           <p className={labelCls}>WhatsApp messages</p>
           <div className="space-y-2">

@@ -28,6 +28,9 @@ const planOf = (r: any): Plan => ({
   minBill: num(r.min_bill),
   offerText: r.offer_text ?? "",
   offerValidUntil: r.offer_valid_until ?? null,
+  offerPct: num(r.offer_pct),
+  onlyCategories: Array.isArray(r.only_categories) ? r.only_categories : [],
+  onlyProducts: Array.isArray(r.only_products) ? r.only_products : [],
 });
 
 function memberOf(r: any, plans: Map<string, Plan>): Member {
@@ -44,6 +47,9 @@ function memberOf(r: any, plans: Map<string, Plan>): Member {
     minBill: plan?.minBill ?? 0,
     offerText: plan?.offerText ?? "",
     offerValidUntil: plan?.offerValidUntil ?? null,
+    offerPct: plan?.offerPct ?? 0,
+    onlyCategories: plan?.onlyCategories ?? [],
+    onlyProducts: plan?.onlyProducts ?? [],
     joinedAt: new Date(r.joined_at).toISOString(),
     expiresAt: r.expires_at ?? null,
     paymentStatus: r.payment_status === "pending" ? "pending" : "paid",
@@ -69,7 +75,7 @@ const settingsOf = (r: any): MemberSettings =>
     ? {
         basis: r.eligibility_basis === "subtotal" ? "subtotal" : "net",
         msgActivation: r.msg_activation !== false, msgUpgrade: r.msg_upgrade !== false, msgRenewal: r.msg_renewal !== false,
-        msgExpiry: r.msg_expiry !== false, msgEligibility: r.msg_eligibility !== false, msgOffers: r.msg_offers !== false,
+        msgExpiry: r.msg_expiry !== false, msgEligibility: r.msg_eligibility !== false, msgOffers: r.msg_offers !== false, countCurrentBill: r.count_current_bill !== false,
         reminderDays: String(r.reminder_days ?? "7,3,0").split(",").map((x) => Number(x.trim())).filter((n) => Number.isInteger(n) && n >= 0 && n <= 60),
       }
     : DEFAULT_SETTINGS;
@@ -87,7 +93,7 @@ export async function saveSettings(s: MemberSettings): Promise<MemberSettings> {
     .upsert({
       id: "default", eligibility_basis: s.basis === "subtotal" ? "subtotal" : "net",
       msg_activation: !!s.msgActivation, msg_upgrade: !!s.msgUpgrade, msg_renewal: !!s.msgRenewal, msg_expiry: !!s.msgExpiry,
-      msg_eligibility: !!s.msgEligibility, msg_offers: !!s.msgOffers, reminder_days: days.join(","), updated_at: new Date().toISOString(),
+      msg_eligibility: !!s.msgEligibility, msg_offers: !!s.msgOffers, count_current_bill: s.countCurrentBill !== false, reminder_days: days.join(","), updated_at: new Date().toISOString(),
     })
     .select("*")
     .single();
@@ -344,6 +350,7 @@ export async function queueOffer(planId: string | "all", text: string): Promise<
 export type PlanInput = {
   id?: string; name: string; fee: number; months: number; discountPct: number; birthdayPct: number; description: string; active: boolean;
   eligibility: Eligibility; threshold: number; minBill: number; offerText: string; offerValidUntil: string | null;
+  offerPct: number; onlyCategories: string[]; onlyProducts: string[];
 };
 
 export async function savePlan(i: PlanInput): Promise<Plan> {
@@ -363,6 +370,10 @@ export async function savePlan(i: PlanInput): Promise<Plan> {
   if (!Number.isFinite(threshold) || threshold < 0) throw new Error("The purchase threshold can't be negative.");
   if (eligibility !== "manual" && threshold <= 0) throw new Error("Enter the purchase amount a customer needs to qualify, or choose manual enrolment.");
   if (!Number.isFinite(minBill) || minBill < 0) throw new Error("The minimum bill can't be negative.");
+  const offerPct = Number(i.offerPct || 0);
+  if (!Number.isFinite(offerPct) || offerPct < 0 || offerPct > 100) throw new Error("The extra offer discount must be between 0 and 100%.");
+  if (disc + offerPct > 100) throw new Error("The member discount and the extra offer together can't be more than 100%.");
+  const list = (v: unknown) => [...new Set((Array.isArray(v) ? v : []).map((x) => String(x).trim().slice(0, 80)).filter(Boolean))].slice(0, 100);
   const until = i.offerValidUntil && /^\d{4}-\d{2}-\d{2}$/.test(i.offerValidUntil) ? i.offerValidUntil : null;
   const round = (n: number) => Math.round(n * 100) / 100;
   const row = {
@@ -370,6 +381,7 @@ export async function savePlan(i: PlanInput): Promise<Plan> {
     description: String(i.description ?? "").trim().slice(0, 200), is_active: !!i.active,
     eligibility, threshold: eligibility === "manual" ? 0 : round(threshold), min_bill: round(minBill),
     offer_text: String(i.offerText ?? "").trim().slice(0, 120), offer_valid_until: until,
+    offer_pct: round(offerPct), only_categories: list(i.onlyCategories), only_products: list(i.onlyProducts),
   };
   const q = i.id ? sb.from("membership_plans").update(row).eq("id", i.id) : sb.from("membership_plans").insert(row);
   const { data, error } = await q.select("*").single();

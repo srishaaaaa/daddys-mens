@@ -54,7 +54,7 @@ import MembershipBillingBox, { type PendingEnroll } from "./MembershipBillingBox
 import MembershipAnalytics, { type SalesBill } from "./MembershipAnalytics";
 import { enrollFromBillingAction, attachMemberToOrderAction, markMessageAction } from "@/app/pos/membership-actions";
 import { waLink } from "@/lib/membershipMessages";
-import { EMPTY_OVERVIEW, liveOffer, memberDiscount, type MemberMessage, type Overview } from "@/lib/membershipTypes";
+import { EMPTY_OVERVIEW, eligibleAmount, liveOffer, memberDiscount, type MemberMessage, type Overview } from "@/lib/membershipTypes";
 import { prefetchInventory } from "./InventoryPanel";
 import { prefetchCoupons } from "./CouponsPanel";
 import { prefetchExpenses } from "./ExpensesPanel";
@@ -80,6 +80,7 @@ import {
   deleteOrderAction,
   listOrdersAction,
   listProductsAction,
+  refundOrderAction,
   orderExistsAction,
   createOrderAction,
   updateProductAction,
@@ -106,6 +107,7 @@ type CatalogItem = {
   name: string;
   desc?: string;
   price?: number;
+  category?: string;
 };
 
 // The catalog lives entirely in the `products` table — the built-in items were
@@ -141,6 +143,12 @@ type CompletedOrder = {
   /** membership discount applied on this bill */
   memberNo?: string | null;
   memberPlan?: string | null;
+  /** the part of the member discount that came from the plan's extra offer percentage */
+  memberOfferAmount?: number;
+  /** money handed back on this bill */
+  refundAmount?: number;
+  refundedAt?: string | null;
+  refundNote?: string | null;
   /** loyalty on this bill: points used / earned and the rupees the used points took off */
   loyaltyUsed?: number;
   loyaltyEarned?: number;
@@ -380,7 +388,13 @@ const SearchableItemInput = ({
   );
 };
 
-function OrderBody({ o }: { o: CompletedOrder }) {
+function OrderBody({ o, onRefund }: { o: CompletedOrder; onRefund?: (amount: number, note: string) => Promise<void> }) {
+  const [refunding, setRefunding] = useState(false);
+  const [rAmt, setRAmt] = useState("");
+  const [rNote, setRNote] = useState("");
+  const [rBusy, setRBusy] = useState(false);
+  const [rErr, setRErr] = useState("");
+  const offerAmt = o.memberOfferAmount ?? 0;
   const isGst = o.isGst !== undefined ? o.isGst : o.items.some((i) => i.name.startsWith("GST ("));
   const lines = o.items.filter((i) => !i.name.startsWith("GST ("));
   const gstLine = o.items.find((i) => i.name.startsWith("GST ("));
@@ -420,7 +434,8 @@ function OrderBody({ o }: { o: CompletedOrder }) {
 
                 <div className="mt-3 space-y-2 border-t border-black/10 pt-4 text-[15px]">
                   <div className="flex justify-between"><span className="text-slate-700">Subtotal</span><b className="text-black">{money(o.subtotal)}</b></div>
-                  {slotDisc > 0 && <div className="flex justify-between"><span className="text-slate-700">{o.memberNo ? `Member discount · ${o.memberPlan || "Member"}` : "Discount"}{o.discountType === "PERCENT" && o.discountValue ? ` (${o.discountValue}%)` : ""}</span><b className="text-black">-{money(slotDisc)}</b></div>}
+                  {slotDisc - offerAmt > 0 && <div className="flex justify-between"><span className="text-slate-700">{o.memberNo ? `Member discount · ${o.memberPlan || "Member"}` : "Discount"}{o.discountType === "PERCENT" && o.discountValue && !offerAmt ? ` (${o.discountValue}%)` : ""}</span><b className="text-black">-{money(slotDisc - offerAmt)}</b></div>}
+                  {offerAmt > 0 && <div className="flex justify-between"><span className="text-slate-700">Additional member offer</span><b className="text-black">-{money(offerAmt)}</b></div>}
                   {(o.loyaltyDiscount ?? 0) > 0 && <div className="flex justify-between"><span className="text-slate-700">Loyalty points used{o.loyaltyUsed ? ` (${o.loyaltyUsed} pts)` : ""}</span><b className="text-black">-{money(o.loyaltyDiscount ?? 0)}</b></div>}
                   {o.deliveryFee > 0 && <div className="flex justify-between"><span className="text-slate-700">Delivery</span><b className="text-black">{money(o.deliveryFee)}</b></div>}
                   {gstLine && <div className="flex justify-between"><span className="text-slate-700">{gstLine.name}</span><b className="text-black">{money(gstAmt)}</b></div>}
@@ -428,6 +443,49 @@ function OrderBody({ o }: { o: CompletedOrder }) {
                     <span className="text-[20px] font-black text-black">TOTAL</span>
                     <span className="text-[24px] font-black text-[#C1272D]">{money(o.grandTotal)}</span>
                   </div>
+                  {(o.refundAmount ?? 0) > 0 && (
+                    <div className="mt-3 space-y-1 rounded-xl bg-amber-50 px-4 py-3 text-[13px]">
+                      <div className="flex justify-between"><span className="font-semibold text-amber-900">Refunded{o.refundNote ? ` · ${o.refundNote}` : ""}</span><b className="text-amber-900">−{money(o.refundAmount ?? 0)}</b></div>
+                      <div className="flex justify-between"><span className="text-slate-700">Net received</span><b className="text-black">{money(o.grandTotal - (o.refundAmount ?? 0))}</b></div>
+                    </div>
+                  )}
+                  {onRefund && (o.refundAmount ?? 0) < o.grandTotal && (
+                    <div className="mt-3">
+                      {!refunding ? (
+                        <button type="button" onClick={() => setRefunding(true)} className="cursor-pointer text-[12px] font-bold uppercase tracking-wider text-[#C1272D] underline">Return / refund</button>
+                      ) : (
+                        <form
+                          className="space-y-2 rounded-xl border border-black/10 bg-[#FAF7F2] p-3"
+                          onSubmit={async (e) => {
+                            e.preventDefault();
+                            setRBusy(true);
+                            setRErr("");
+                            try {
+                              await onRefund(Number(rAmt), rNote);
+                              setRefunding(false);
+                              setRAmt("");
+                              setRNote("");
+                            } catch (x) {
+                              setRErr(x instanceof Error ? x.message : "Could not record the refund.");
+                            } finally {
+                              setRBusy(false);
+                            }
+                          }}
+                        >
+                          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Money handed back (up to {money(o.grandTotal - (o.refundAmount ?? 0))})</p>
+                          <div className="flex flex-wrap gap-2">
+                            <input type="number" min={0} step="0.01" placeholder="Amount ₹" value={rAmt} onChange={(e) => setRAmt(e.target.value)} className="h-10 w-32 rounded-lg border border-black/10 bg-white px-3 text-[13px] font-bold outline-none" />
+                            <input type="text" maxLength={120} placeholder="Reason (optional)" value={rNote} onChange={(e) => setRNote(e.target.value)} className="h-10 min-w-0 flex-1 rounded-lg border border-black/10 bg-white px-3 text-[13px] outline-none" />
+                          </div>
+                          {rErr && <p className="text-[12px] font-bold text-red-700">{rErr}</p>}
+                          <div className="flex gap-2">
+                            <button type="submit" disabled={rBusy || !(Number(rAmt) > 0)} className="h-9 cursor-pointer rounded-lg bg-[#C1272D] px-4 text-[12px] font-bold text-white disabled:opacity-50">{rBusy ? "Saving…" : "Record refund"}</button>
+                            <button type="button" onClick={() => setRefunding(false)} className="h-9 cursor-pointer rounded-lg border border-black/10 bg-white px-4 text-[12px] font-bold text-slate-700">Cancel</button>
+                          </div>
+                        </form>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
   );
@@ -557,7 +615,7 @@ export default function POSBilling() {
   const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
   // Membership: plans, members and fees (from the first load), and the member discount on the current bill.
   const [mship, setMship] = useState<Overview>(EMPTY_OVERVIEW);
-  const [mshipApplied, setMshipApplied] = useState<{ memberNo: string; plan: string; pct: number; phone: string } | null>(null);
+  const [mshipApplied, setMshipApplied] = useState<{ memberNo: string; plan: string; pct: number; offerPct: number; fixed?: number; phone: string } | null>(null);
   // A membership the cashier chose to activate / upgrade / renew on this bill (done when the bill is completed).
   const [pendingEnroll, setPendingEnroll] = useState<PendingEnroll | null>(null);
   // The cashier removed the automatic member discount for this customer: don't put it back.
@@ -697,6 +755,10 @@ export default function POSBilling() {
             isGst: o.is_gst,
             memberNo: o.member_no ?? null,
             memberPlan: o.member_plan ?? null,
+            memberOfferAmount: o.member_offer_amount ?? 0,
+            refundAmount: o.refund_amount ?? 0,
+            refundedAt: o.refunded_at ?? null,
+            refundNote: o.refund_note ?? null,
             loyaltyUsed: o.loyalty_used ?? 0,
             loyaltyEarned: o.loyalty_earned ?? 0,
             loyaltyDiscount: o.loyalty_discount ?? 0,
@@ -731,6 +793,7 @@ export default function POSBilling() {
         desc: p.description,
         imageUrl: p.image_url ?? null,
         price: p.default_price || undefined,
+        category: p.category ?? "",
       }));
       setCatalog(freshCatalog);
       try {
@@ -1021,37 +1084,63 @@ export default function POSBilling() {
       : discountValue;
   // The member discount lives in the same discount slot as coupons and the manual discount, so it can never be
   // added on top of them; changing either one switches it off by itself.
-  const memberDiscountOn =
-    !!mshipApplied && mshipApplied.phone === customerPhone && discountType === "percent" && discountValue === mshipApplied.pct && selectedCoupon === "none";
+  const slotIsMine =
+    !!mshipApplied && selectedCoupon === "none" &&
+    (mshipApplied.fixed !== undefined ? discountType === "fixed" && discountValue === mshipApplied.fixed : discountType === "percent" && discountValue === mshipApplied.pct);
+  const memberDiscountOn = slotIsMine && mshipApplied!.phone === customerPhone;
   // The customer's membership, found by their number. Their discount goes on the bill by itself (the cashier can remove it).
   const currentMember = customerPhone.length === 10 ? mship.members.find((x) => x.phone === customerPhone) : undefined;
-  const wantedDiscount = currentMember ? memberDiscount(currentMember, subtotal) : null;
+  // Plans can be limited to some categories / products: then the discount is a fixed rupee amount on those items only.
+  const catalogCategory = useMemo(() => new Map(catalog.map((c) => [c.name.trim().toLowerCase(), c.category ?? ""])), [catalog]);
+  const memberEligible = currentMember
+    ? eligibleAmount(currentMember, items.map((i) => ({ name: i.name, price: i.price, qty: i.qty })), (n) => catalogCategory.get(n.trim().toLowerCase()) ?? "")
+    : { amount: subtotal, restricted: false };
+  const foundDiscount = currentMember ? memberDiscount(currentMember, subtotal) : null;
+  const wantedDiscount = foundDiscount && !(memberEligible.restricted && memberEligible.amount <= 0) ? foundDiscount : null;
+  const slotFor = (d: { total: number }) =>
+    memberEligible.restricted ? { type: "fixed" as const, value: Math.round(memberEligible.amount * d.total) / 100 } : { type: "percent" as const, value: d.total };
+  const catalogCategories = useMemo(() => [...new Set(catalog.map((c) => c.category ?? "").filter(Boolean))].sort(), [catalog]);
+  const catalogNames = useMemo(() => [...new Set(catalog.map((c) => c.name).filter(Boolean))].sort(), [catalog]);
   const billRows: BillRow[] = useMemo(
     () =>
       orders.map((o) => ({
         id: o.id, name: o.customerName, phone: (o.customerPhone || "").replace(/\D/g, "").slice(-10), subtotal: o.subtotal, discount: o.discount,
-        completed: o.status === "Completed", date: o.date, total: o.grandTotal,
+        completed: o.status === "Completed", date: o.date, total: o.grandTotal, refund: o.refundAmount ?? 0,
       })),
     [orders],
   );
   // The membership fee chosen for this bill is charged as its own line (never discounted, never taxed).
   const membershipFee = pendingEnroll && pendingEnroll.phone === customerPhone ? pendingEnroll.fee : 0;
+  const want = wantedDiscount ? { ...slotFor(wantedDiscount), d: wantedDiscount } : null;
   useEffect(() => {
-    const on = !!mshipApplied && mshipApplied.phone === customerPhone;
-    if (mshipApplied && (!on || !wantedDiscount || wantedDiscount.pct !== mshipApplied.pct)) {
-      // no longer valid (other customer, bill too small, different rate): take our discount off again
-      if (discountType === "percent" && discountValue === mshipApplied.pct && selectedCoupon === "none") setDiscountValue(0);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setMshipApplied(null);
+    if (mshipApplied) {
+      if (!slotIsMine) {
+        // the cashier changed the discount by hand: ours is off, and stays off for this customer
+        setMshipApplied(null);
+        setMshipRemoved(customerPhone);
+        return;
+      }
+      if (mshipApplied.phone !== customerPhone || !want) {
+        // another customer, or the bill no longer qualifies: take our discount off again
+        setDiscountValue(0);
+        setMshipApplied(null);
+        return;
+      }
+      if (want.value !== discountValue || want.type !== discountType) {
+        // the items changed: keep the discount in step
+        setDiscountType(want.type);
+        setDiscountValue(want.value);
+        setMshipApplied({ ...mshipApplied, pct: want.d.total, offerPct: want.d.offerPct, fixed: want.type === "fixed" ? want.value : undefined });
+      }
       return;
     }
-    if (!mshipApplied && currentMember && wantedDiscount && subtotal > 0 && discountValue === 0 && selectedCoupon === "none" && mshipRemoved !== customerPhone) {
-      setDiscountType("percent");
-      setDiscountValue(wantedDiscount.pct);
-      setMshipApplied({ memberNo: currentMember.memberNo, plan: currentMember.planName, pct: wantedDiscount.pct, phone: currentMember.phone });
+    if (currentMember && want && subtotal > 0 && discountValue === 0 && selectedCoupon === "none" && mshipRemoved !== customerPhone) {
+      setDiscountType(want.type);
+      setDiscountValue(want.value);
+      setMshipApplied({ memberNo: currentMember.memberNo, plan: currentMember.planName, pct: want.d.total, offerPct: want.d.offerPct, fixed: want.type === "fixed" ? want.value : undefined, phone: currentMember.phone });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customerPhone, subtotal, discountValue, discountType, selectedCoupon, wantedDiscount?.pct, currentMember?.id, mshipApplied, mshipRemoved]);
+  }, [customerPhone, subtotal, items, discountValue, discountType, selectedCoupon, want?.value, want?.type, want?.d.total, currentMember?.id, mshipApplied, mshipRemoved]);
   // Loyalty: the cap comes from the shop's rules; the server re-checks everything when the bill is saved.
   const memberAvailable = member?.customer?.available ?? 0;
   const giftPointsReserved = member?.customer
@@ -1258,6 +1347,7 @@ export default function POSBilling() {
         membership_fee: membershipFee,
         member_event: enrollLabel,
         member_offer: memberDiscountOn && currentMember ? liveOffer(currentMember) || null : null,
+        member_offer_amount: memberDiscountOn ? Math.round(memberEligible.amount * mshipApplied!.offerPct) / 100 : 0,
         upi_channel: paymentMethod === "GPAY" || (paymentMethod === "SPLIT" && Number(splitUpi) > 0) ? upiVia || defaultUpiVia : null,
         split_cash: paymentMethod === "SPLIT" ? Number(splitCash) || 0 : 0,
         split_upi: paymentMethod === "SPLIT" ? Number(splitUpi) || 0 : 0,
@@ -1350,6 +1440,7 @@ export default function POSBilling() {
       paymentMethod,
       memberNo: memberDiscountOn ? mshipApplied!.memberNo : null,
       memberPlan: memberDiscountOn ? mshipApplied!.plan : null,
+      memberOfferAmount: memberDiscountOn ? Math.round(memberEligible.amount * mshipApplied!.offerPct) / 100 : 0,
       loyaltyUsed: settledNow?.used ?? 0,
       loyaltyEarned: settledNow?.earned ?? 0,
       loyaltyDiscount: settledNow && settledNow.used > 0 ? loyaltyDiscount : 0,
@@ -1741,6 +1832,8 @@ export default function POSBilling() {
   const otherDiscountTotal = otherDiscountBills.reduce((a, o) => a + slotOf(o), 0);
   const memberActive = mship.members.filter((m) => !m.off && !(m.expiresAt && m.expiresAt < new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }))).length;
 
+  const refundBills = analyticsFilteredOrders.filter((o) => (o.refundAmount ?? 0) > 0);
+  const refundTotal = refundBills.reduce((a, o) => a + (o.refundAmount ?? 0), 0);
   const salesBills: SalesBill[] = analyticsFilteredOrders.map((o) => ({
     phone: (o.customerPhone || "").replace(/\D/g, "").slice(-10), total: o.grandTotal, discount: o.discount, memberNo: o.memberNo ?? null, loyaltyDiscount: o.loyaltyDiscount ?? 0,
   }));
@@ -2665,20 +2758,24 @@ export default function POSBilling() {
                     members={mship.members}
                     plans={mship.plans}
                     basis={mship.settings.basis}
+                    countCurrent={mship.settings.countCurrentBill}
+                    eligibleAmount={memberEligible.amount}
+                    restricted={memberEligible.restricted}
                     bills={billRows}
                     billSubtotal={subtotal}
                     billDiscount={calculatedDiscount}
                     applied={memberDiscountOn}
                     pending={pendingEnroll}
                     onPending={setPendingEnroll}
-                    onApply={(m, pct) => {
-                      setDiscountType("percent");
-                      setDiscountValue(pct);
+                    onApply={(m, d) => {
+                      const slot = slotFor(d);
+                      setDiscountType(slot.type);
+                      setDiscountValue(slot.value);
                       setSelectedCoupon("none");
                       setCouponInput("");
                       setCouponMsg(null);
                       setMshipRemoved(null);
-                      setMshipApplied({ memberNo: m.memberNo, plan: m.planName, pct, phone: m.phone });
+                      setMshipApplied({ memberNo: m.memberNo, plan: m.planName, pct: d.total, offerPct: d.offerPct, fixed: slot.type === "fixed" ? slot.value : undefined, phone: m.phone });
                     }}
                     onRemove={() => {
                       setDiscountValue(0);
@@ -3639,7 +3736,7 @@ export default function POSBilling() {
         {role === "admin" && activeTab === "expenses" && <ExpensesPanel />}
         {role === "admin" && activeTab === "settings" && <SettingsPanel />}
         {activeTab === "loyalty" && <LoyaltyPanel admin={role === "admin"} />}
-        {activeTab === "membership" && <MembershipPanel shop={shopProfile.shopName} admin={role === "admin"} data={mship} setData={setMship} bills={billRows} />}
+        {activeTab === "membership" && <MembershipPanel shop={shopProfile.shopName} admin={role === "admin"} data={mship} setData={setMship} bills={billRows} categories={catalogCategories} productNames={catalogNames} />}
 
         {role === "admin" && activeTab === "orders" && (
           <div className="flex-1 flex flex-col max-w-[1400px] mx-auto w-full pb-8 pr-2 animate-in fade-in duration-300">
@@ -4429,7 +4526,7 @@ export default function POSBilling() {
                   <AnalyticsCard label="Coupon / Manual Discounts" icon={<Percent className="w-4 h-4" />} value={`₹${inr2(otherDiscountTotal)}`} sub={plural(otherDiscountBills.length, "bill")} />
                 </div>
                 <p className="mb-8 text-[11.5px] text-[#4A4038]">
-                  Membership fees collected so far: <b>₹{inr2(mship.revenue)}</b> ({mship.members.length} member{mship.members.length === 1 ? "" : "s"} in total). Each discount is counted once, under where it came from.
+                  Membership fees collected so far: <b>₹{inr2(mship.revenue)}</b> ({mship.members.length} member{mship.members.length === 1 ? "" : "s"} in total). Each discount is counted once, under where it came from.{refundTotal > 0 && <> Refunds handed back: <b>₹{inr2(refundTotal)}</b> on {plural(refundBills.length, "bill")} (they are still inside the revenue above; net of refunds it is ₹{inr2(totalRevenueAmount - refundTotal)}).</>}
                 </p>
 
                 <MembershipAnalytics data={mship} allBills={billRows} salesBills={salesBills} />
@@ -5337,7 +5434,13 @@ export default function POSBilling() {
                   <X className="h-5 w-5" />
                 </button>
               </div>
-              <OrderBody o={o} />
+              <OrderBody
+                o={o}
+                onRefund={role === "admin" ? async (amt, note) => {
+                  const r = await unwrap(refundOrderAction(o.id, amt, note));
+                  setOrders((prev) => prev.map((x) => (x.id === o.id ? { ...x, refundAmount: r.refund_amount, refundedAt: r.refunded_at, refundNote: r.refund_note } : x)));
+                } : undefined}
+              />
             </div>
           </div>
         );

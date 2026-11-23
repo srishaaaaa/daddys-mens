@@ -8,6 +8,7 @@ export type StoredProduct = {
   description: string;
   default_price: number;
   image_url?: string | null;
+  category?: string;
 };
 
 export type StoredOrderItem = {
@@ -50,6 +51,12 @@ export type StoredOrder = {
   member_event?: string | null;
   member_event_no?: string | null;
   member_offer?: string | null;
+  /** the part of the member discount that came from the plan's extra offer percentage */
+  member_offer_amount?: number;
+  /** Money handed back on this bill (a return or refund). Needs migration 0015. */
+  refund_amount?: number;
+  refunded_at?: string | null;
+  refund_note?: string | null;
   /** Loyalty on this bill (set when the bill is settled): points used / earned and the rupees they took off. */
   loyalty_used?: number;
   loyalty_earned?: number;
@@ -64,7 +71,7 @@ export async function getProducts(): Promise<StoredProduct[]> {
   // image_url needs migration 0008; fall back so billing keeps working without it.
   let res: any = await sb
     .from("products")
-    .select("id, name, description, default_price, image_url")
+    .select("id, name, description, default_price, image_url, category")
     .order("created_at", { ascending: true });
   if (res.error) {
     res = await sb.from("products").select("id, name, description, default_price").order("created_at", { ascending: true });
@@ -79,6 +86,7 @@ export async function getProducts(): Promise<StoredProduct[]> {
     description: r.description,
     default_price: num(r.default_price),
     image_url: r.image_url ?? null,
+    category: r.category ?? "General",
   }));
 }
 
@@ -171,7 +179,7 @@ export async function getOrders(): Promise<StoredOrder[]> {
     // GST flag (migration 0010); without it analytics falls back to looking for the GST line.
     sb.from("orders").select("id, is_gst, gst_inclusive, gst_percent, gst_amount"),
     // Which bills had a member discount (migration 0013).
-    sb.from("orders").select("id, member_no, member_plan, membership_fee, member_event, member_event_no, member_offer").or("member_no.not.is.null,member_event.not.is.null,membership_fee.gt.0"),
+    sb.from("orders").select("id, member_no, member_plan, membership_fee, member_event, member_event_no, member_offer, member_offer_amount, refund_amount, refunded_at, refund_note").or("member_no.not.is.null,member_event.not.is.null,membership_fee.gt.0,refund_amount.gt.0"),
     // Loyalty points used / earned on bills.
     sb.from("orders").select("id, loyalty_used, loyalty_earned, loyalty_discount").not("loyalty_customer_id", "is", null),
   ]);
@@ -214,6 +222,10 @@ export async function getOrders(): Promise<StoredOrder[]> {
         o.member_event = r.member_event ?? null;
         o.member_event_no = r.member_event_no ?? null;
         o.member_offer = r.member_offer ?? null;
+        o.member_offer_amount = num(r.member_offer_amount);
+        o.refund_amount = num(r.refund_amount);
+        o.refunded_at = r.refunded_at ?? null;
+        o.refund_note = r.refund_note ?? null;
       }
     }
   }
@@ -237,7 +249,7 @@ export async function getOrder(id: string): Promise<StoredOrder | null> {
     // Read separately so the invoice still works before migration 0004 is applied.
     sb.from("orders").select("upi_channel").eq("id", id).maybeSingle(),
     sb.from("orders").select("split_cash, split_upi, split_card").eq("id", id).maybeSingle(),
-    sb.from("orders").select("member_no, member_plan, membership_fee, member_event, member_event_no, member_offer").eq("id", id).maybeSingle(),
+    sb.from("orders").select("member_no, member_plan, membership_fee, member_event, member_event_no, member_offer, member_offer_amount, refund_amount, refunded_at, refund_note").eq("id", id).maybeSingle(),
   ]);
   if (error) {
     console.error(`Error fetching order ${id} from DB:`, error);
@@ -253,6 +265,10 @@ export async function getOrder(id: string): Promise<StoredOrder | null> {
     order.member_event = (mb as any).member_event ?? null;
     order.member_event_no = (mb as any).member_event_no ?? null;
     order.member_offer = (mb as any).member_offer ?? null;
+    order.member_offer_amount = num((mb as any).member_offer_amount);
+    order.refund_amount = num((mb as any).refund_amount);
+    order.refunded_at = (mb as any).refunded_at ?? null;
+    order.refund_note = (mb as any).refund_note ?? null;
   }
   if (sp) {
     order.split_cash = num(sp.split_cash);
@@ -299,10 +315,10 @@ export async function saveOrder(order: StoredOrder): Promise<void> {
     const { error: mErr } = await sb.from("orders").update({ member_no: order.member_no, member_plan: order.member_plan ?? "" }).eq("id", order.id);
     if (mErr) console.error("Could not save the membership on the bill (is migration 0013 applied?):", mErr.message);
   }
-  if ((order.membership_fee ?? 0) > 0 || order.member_event || order.member_offer) {
+  if ((order.membership_fee ?? 0) > 0 || order.member_event || order.member_offer || (order.member_offer_amount ?? 0) > 0) {
     const { error: m2 } = await sb
       .from("orders")
-      .update({ membership_fee: order.membership_fee ?? 0, member_event: order.member_event ?? null, member_event_no: order.member_event_no ?? null, member_offer: order.member_offer ?? null })
+      .update({ membership_fee: order.membership_fee ?? 0, member_event: order.member_event ?? null, member_event_no: order.member_event_no ?? null, member_offer: order.member_offer ?? null, member_offer_amount: order.member_offer_amount ?? 0 })
       .eq("id", order.id);
     if (m2) console.error("Could not save the membership details on the bill (is migration 0014 applied?):", m2.message);
   }
@@ -320,4 +336,18 @@ export async function deleteOrder(id: string): Promise<void> {
   // order_items is ON DELETE CASCADE, so this clears the invoice everywhere.
   const { error } = await sb.from("orders").delete().eq("id", id);
   if (error) throw error;
+}
+
+/** Records money handed back on a bill (a return or refund). Up to the amount of the bill, over one or more refunds. */
+export async function refundOrder(id: string, amount: number, note: string): Promise<{ refund_amount: number; refunded_at: string; refund_note: string }> {
+  const { data: o, error } = await sb.from("orders").select("grand_total, refund_amount").eq("id", id).maybeSingle();
+  if (error || !o) throw new Error("That bill wasn't found.");
+  const amt = Math.round(Number(amount) * 100) / 100;
+  if (!Number.isFinite(amt) || amt <= 0) throw new Error("Enter the amount handed back.");
+  const total = Math.round((num(o.refund_amount) + amt) * 100) / 100;
+  if (total > num(o.grand_total) + 0.001) throw new Error(`That is more than the bill. At most ₹${(num(o.grand_total) - num(o.refund_amount)).toLocaleString("en-IN")} can still be refunded.`);
+  const row = { refund_amount: total, refunded_at: new Date().toISOString(), refund_note: String(note ?? "").trim().slice(0, 120) };
+  const { error: e2 } = await sb.from("orders").update(row).eq("id", id);
+  if (e2) throw new Error(/refund_/.test(e2.message) ? "Refunds need migration 0015 (supabase/all_migrations.sql) in Supabase first." : e2.message);
+  return row;
 }
