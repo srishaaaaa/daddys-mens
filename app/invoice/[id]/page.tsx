@@ -2,19 +2,12 @@ import { getOrder } from "@/lib/db";
 import { getConfig, orderLoyalty } from "@/lib/loyalty/server";
 import { getShopProfile } from "@/lib/shopSettings";
 import { notFound } from "next/navigation";
-import { MapPin, Phone, Mail } from "lucide-react";
 import InvoiceActions from "./invoice-actions";
 import type { Metadata } from "next";
 
-export async function generateMetadata({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}): Promise<Metadata> {
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
-  return {
-    title: `Invoice - ${id}`,
-  };
+  return { title: `Invoice - ${id}` };
 }
 
 const UPI_CHANNEL_LABELS: Record<string, string> = {
@@ -25,17 +18,47 @@ const UPI_CHANNEL_LABELS: Record<string, string> = {
   other: "Other UPI",
 };
 
-export default async function InvoicePage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+const money = (n: number) => `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/* ₹ in words, the Indian way: crore, lakh, thousand. */
+const ONES = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"];
+const TENS = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+function below1000(n: number): string {
+  const out: string[] = [];
+  if (n >= 100) {
+    out.push(`${ONES[Math.floor(n / 100)]} Hundred`);
+    n %= 100;
+  }
+  if (n >= 20) out.push(TENS[Math.floor(n / 10)] + (n % 10 ? ` ${ONES[n % 10]}` : ""));
+  else if (n > 0) out.push(ONES[n]);
+  return out.join(" ");
+}
+function rupeesInWords(amount: number): string {
+  const total = Math.round(Math.max(0, amount) * 100);
+  let rupees = Math.floor(total / 100);
+  const paise = total % 100;
+  if (rupees === 0 && paise === 0) return "Zero Rupees Only";
+  const parts: string[] = [];
+  const crore = Math.floor(rupees / 10_000_000);
+  rupees %= 10_000_000;
+  const lakh = Math.floor(rupees / 100_000);
+  rupees %= 100_000;
+  const thousand = Math.floor(rupees / 1000);
+  rupees %= 1000;
+  if (crore) parts.push(`${below1000(crore)} Crore`);
+  if (lakh) parts.push(`${below1000(lakh)} Lakh`);
+  if (thousand) parts.push(`${below1000(thousand)} Thousand`);
+  if (rupees) parts.push(below1000(rupees));
+  let words = parts.join(" ");
+  words = words ? `${words} Rupees` : "";
+  if (paise) words += `${words ? " and " : ""}${below1000(paise)} Paise`;
+  return `${words} Only`;
+}
+
+export default async function InvoicePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const order = await getOrder(id);
-
-  if (!order) {
-    notFound();
-  }
+  if (!order) notFound();
 
   const shop = await getShopProfile();
 
@@ -43,318 +66,162 @@ export default async function InvoicePage({
   const loyalty = await orderLoyalty(id).catch(() => null);
   const showLoyalty = loyalty ? (await getConfig().catch(() => null))?.display.receiptSummary : false;
 
+  const [rawPhone, rawMethod] = (order.customer_phone || "").split("_");
+  const phone = (rawPhone || "").replace(/\D/g, "").slice(-10);
+  const method = (rawMethod || "CASH").toUpperCase();
+  const modeLabel = method === "GPAY" ? "UPI" : method;
+  const date = new Date(order.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+
+  const lines = order.order_items.filter((i) => !i.snapshot_name.startsWith("GST ("));
+  const gstItem = order.order_items.find((i) => i.snapshot_name.startsWith("GST ("));
+  const gstAmount = gstItem ? gstItem.snapshot_price * gstItem.quantity : 0;
+
+  const split = (order.split_cash ?? 0) + (order.split_upi ?? 0) + (order.split_card ?? 0) > 0;
+  const channel = order.upi_channel ? UPI_CHANNEL_LABELS[order.upi_channel] : "";
+  const paidVia =
+    method === "CASH" ? "Cash"
+    : method === "CARD" ? "Card"
+    : method === "GPAY" ? `UPI${channel ? ` · ${channel}` : ""}`
+    : split ? [order.split_cash ? "Cash" : "", order.split_upi ? "UPI" : "", order.split_card ? "Card" : ""].filter(Boolean).join(" + ")
+    : "Split";
+  const paid = method === "CASH" && order.cash_received > 0 ? order.cash_received : order.grand_total;
+  const balance = Math.max(0, Math.round((order.grand_total - paid) * 100) / 100);
+
+  const lab = "text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500";
+
   return (
-    <div className="min-h-screen bg-[#F5EFE6] text-[#000000] font-sans py-12 px-4 print:p-0 print:bg-white flex flex-col items-center">
+    <div className="min-h-screen bg-[#F7F7F7] text-black font-sans py-8 px-4 print:p-0 print:bg-white flex flex-col items-center">
       <style>{`
         @media print {
-          @page {
-            margin: 10mm;
-          }
-          body {
-            background-color: white !important;
-            color: black !important;
-            padding: 0 !important;
-            margin: 0 !important;
-          }
+          body { background-color: white !important; color: black !important; padding: 0 !important; margin: 0 !important; }
+          * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }
       `}</style>
 
-      {/* Top Navigation / Action Bar (Hidden when printing) */}
+      {/* Print handling only (no buttons for customers) */}
       <InvoiceActions />
 
-      {/* The Invoice Document */}
-      <div className="w-full max-w-3xl bg-white border border-[#E0D5C3] rounded-2xl shadow-xl print:shadow-none print:border-none print:rounded-none overflow-hidden">
-        {/* Header Section */}
-        <div className="bg-[#FAF7F2] border-b border-[#E0D5C3] p-8 sm:p-12 print:p-6 flex flex-col items-center text-center">
-          <div className="w-24 h-24 flex items-center justify-center mb-4">
-            <img
-              src="/logo.png"
-              alt={`${shop.shopName} Logo`}
-              className="max-w-full max-h-full object-contain"
-            />
+      <div id="invoice-doc" className="w-full max-w-[780px] bg-white border border-black/10 rounded-2xl shadow-sm print:shadow-none print:border-0 print:rounded-none p-8 sm:p-10 print:p-4">
+        {/* Header */}
+        <div className="flex flex-col-reverse sm:flex-row sm:items-start sm:justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="text-[22px] sm:text-[24px] font-black uppercase tracking-tight leading-tight text-black">{shop.shopName}</h1>
+            {shop.address && <p className="mt-2 max-w-sm text-[12.5px] leading-relaxed text-slate-600">{shop.address}</p>}
+            {shop.phone && <p className="mt-1.5 text-[12.5px] font-semibold text-slate-800">Phone: +91 {shop.phone}</p>}
+            {shop.email && <p className="text-[12.5px] font-semibold text-slate-800">Email: {shop.email}</p>}
           </div>
-          <h1 className="text-3xl font-black text-[#C1272D] tracking-tight">
-            {shop.shopName}
-          </h1>
-          <p className="text-xs text-[#6B5F52] font-bold tracking-wider mt-1 mb-4">
-            INVOICE: {order.id}
-          </p>
-
-          <div className="flex flex-col items-center gap-2 text-sm text-[#4A4038] font-semibold">
-            {shop.address && (
-              <div className="text-center max-w-md leading-relaxed">
-                <span className="inline-block text-[#C1272D] mr-1.5 align-middle -mt-0.5">
-                  <MapPin className="w-3.5 h-3.5" />
-                </span>
-                <span>{shop.address}</span>
-              </div>
-            )}
-            <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-1">
-              {shop.phone && (
-                <span className="flex items-center gap-1.5">
-                  <Phone className="w-3.5 h-3.5 text-[#C1272D] shrink-0" />
-                  +91 {shop.phone}
-                </span>
-              )}
-              {shop.email && (
-                <span className="flex items-center gap-1.5">
-                  <Mail className="w-3.5 h-3.5 text-[#C1272D] shrink-0" />
-                  {shop.email}
-                </span>
-              )}
-            </div>
+          <div className="sm:text-right shrink-0">
+            <span className="inline-block rounded-md bg-[#C1272D]/10 px-3.5 py-1.5 text-[12px] font-black uppercase tracking-wider text-[#C1272D]">Invoice</span>
+            <p className="mt-2 font-mono text-[12px] font-bold text-slate-800">#{order.id}</p>
+            <p className="text-[12.5px] text-slate-500">{date}</p>
+            <p className="text-[12.5px] text-slate-500">MODE: {modeLabel}</p>
           </div>
         </div>
 
-        {/* Invoice Meta Data */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 p-8 sm:p-12 print:p-6 border-b border-[#E0D5C3]/50">
+        {/* Billed to */}
+        <div className="mt-6 flex items-start justify-between gap-4 border-t border-black/10 pt-5">
           <div>
-            <h3 className="text-[10px] font-bold text-[#6B5F52] uppercase tracking-[0.2em] mb-3">
-              Billed To
-            </h3>
-            <p className="text-base font-bold text-[#C1272D]">
-              {order.customer_name || "Guest Customer"}
-            </p>
-            {order.customer_phone && order.customer_phone.split('_')[0] && (
-              <p className="text-sm text-[#4A4038] font-semibold mt-1">
-                +91 {order.customer_phone.split('_')[0]}
-              </p>
-            )}
+            <p className={lab}>Billed to</p>
+            <p className="mt-1.5 text-[15px] font-bold text-black">{order.customer_name || "Guest"}</p>
+            {phone && <p className="font-mono text-[12.5px] text-slate-600">+91 {phone}</p>}
           </div>
-          <div className="sm:text-right flex flex-col sm:items-end">
-            <h3 className="text-[10px] font-bold text-[#6B5F52] uppercase tracking-[0.2em] mb-3 self-start sm:self-auto">
-              Order Details
-            </h3>
-            <div className="inline-block text-left text-sm space-y-1">
-              <div className="flex gap-2">
-                <span className="text-[#6B5F52] font-bold w-12 text-left sm:text-right">
-                  Date:
-                </span>
-                <span className="text-[#000000] font-black">
-                  {new Date(order.created_at).toLocaleDateString("en-US", {
-                    year: "numeric",
-                    month: "long",
-                    day: "numeric",
-                  })}
-                </span>
-              </div>
-              <div className="flex gap-2">
-                <span className="text-[#6B5F52] font-bold w-12 text-left sm:text-right">
-                  Time:
-                </span>
-                <span className="text-[#000000] font-black">
-                  {new Date(order.created_at).toLocaleTimeString("en-US", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </span>
-              </div>
-              <div className="flex gap-2">
-                <span className="text-[#6B5F52] font-bold w-12 text-left sm:text-right">
-                  Type:
-                </span>
-                <span className="text-[#000000] font-black uppercase">
-                  {order.source} SALE
-                </span>
-              </div>
-              <div className="flex gap-2">
-                <span className="text-[#6B5F52] font-bold w-12 text-left sm:text-right">
-                  Pay:
-                </span>
-                <span className="text-[#000000] font-black uppercase">
-                  {order.customer_phone?.includes("_")
-                    ? order.customer_phone.split("_")[1] === "GPAY"
-                      ? "UPI"
-                      : order.customer_phone.split("_")[1]
-                    : "CASH"}
-                </span>
-                {(order.split_cash ?? 0) + (order.split_upi ?? 0) + (order.split_card ?? 0) > 0 && (
-                  <span className="text-[#6B5F52] font-semibold text-xs self-center">
-                    ·{" "}
-                    {[
-                      order.split_cash ? `Cash ₹${order.split_cash}` : "",
-                      order.split_upi ? `UPI ₹${order.split_upi}` : "",
-                      order.split_card ? `Card ₹${order.split_card}` : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" + ")}
-                  </span>
-                )}
-                {order.upi_channel && UPI_CHANNEL_LABELS[order.upi_channel] && (
-                  <span className="text-[#6B5F52] font-semibold text-xs self-center">
-                    · {UPI_CHANNEL_LABELS[order.upi_channel]}
-                  </span>
-                )}
-              </div>
-            </div>
+          <div className="text-right">
+            <p className={lab}>Place of supply</p>
+            <p className="mt-1.5 text-[13.5px] font-bold text-black">Tamil Nadu (33)</p>
           </div>
         </div>
 
-        {loyalty && showLoyalty && (
-          <div className="mx-8 sm:mx-12 mt-6 print:mx-6 rounded-xl border border-[#E0D5C3] bg-[#FAF7F2] p-4 text-sm">
-            <p className="text-[10px] font-bold text-[#6B5F52] uppercase tracking-[0.2em] mb-2">Loyalty points</p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-semibold text-[#4A4038]">
-              <div>Previous<br /><b className="text-black">{loyalty.prev}</b></div>
-              <div>Earned<br /><b className="text-emerald-700">+{loyalty.earned}</b></div>
-              <div>Redeemed<br /><b className="text-[#C1272D]">-{loyalty.used}</b></div>
-              <div>Remaining<br /><b className="text-black">{loyalty.balance}</b></div>
-            </div>
-          </div>
-        )}
-
-        {/* Items Table */}
-        <div className="p-8 sm:p-12 print:py-4 print:px-6">
-          <div className="w-full overflow-x-auto scrollbar-thin pb-2">
-            <table className="w-full text-left border-collapse min-w-[400px]">
+        {/* Items */}
+        <div className="mt-5 border-t border-black/10 pt-5">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[420px] border-collapse text-left">
               <thead>
-                <tr className="border-b-2 border-[#E0D5C3]">
-                  <th className="py-4 text-[11px] font-bold text-[#6B5F52] uppercase tracking-wider">
-                    Item Description
-                  </th>
-                  <th className="py-4 text-[11px] font-bold text-[#6B5F52] uppercase tracking-wider text-center">
-                    Qty
-                  </th>
-                  <th className="py-4 text-[11px] font-bold text-[#6B5F52] uppercase tracking-wider text-right">
-                    Price
-                  </th>
-                  <th className="py-4 text-[11px] font-bold text-[#6B5F52] uppercase tracking-wider text-right">
-                    Total
-                  </th>
+                <tr className="bg-[#F8F8FA]">
+                  <th className={`${lab} px-3 py-3 w-8`}>#</th>
+                  <th className={`${lab} px-3 py-3`}>Item description</th>
+                  <th className={`${lab} px-3 py-3 text-center`}>Qty</th>
+                  <th className={`${lab} px-3 py-3 text-right`}>Rate (₹)</th>
+                  <th className={`${lab} px-3 py-3 text-right`}>Total (₹)</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E0D5C3]/40">
-                {order.order_items
-                  .filter((i) => !i.snapshot_name.startsWith("GST ("))
-                  .map((item, index) => (
-                    <tr key={index} className="group">
-                      <td className="py-6 pr-4 print:py-3">
-                        <p className="text-sm font-bold text-[#C1272D]">
-                          {item.snapshot_name}
-                        </p>
-                      </td>
-                      <td className="py-6 px-4 print:py-3 text-center text-sm font-bold text-[#4A4038]">
-                        {item.quantity}
-                      </td>
-                      <td className="py-6 pl-4 print:py-3 text-right text-sm font-bold text-[#4A4038]">
-                        ₹
-                        {item.snapshot_price.toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                        })}
-                      </td>
-                      <td className="py-6 pl-4 print:py-3 text-right text-sm font-black text-[#C1272D]">
-                        ₹
-                        {(item.snapshot_price * item.quantity).toLocaleString(
-                          undefined,
-                          { minimumFractionDigits: 2 },
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+              <tbody>
+                {lines.map((item, i) => (
+                  <tr key={i} className="border-b border-black/5">
+                    <td className="px-3 py-3.5 text-[12.5px] text-slate-400">{i + 1}</td>
+                    <td className="px-3 py-3.5 text-[13.5px] font-bold text-black">
+                      {item.snapshot_name}
+                      {item.snapshot_price === 0 && <span className="ml-2 rounded bg-emerald-50 px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-emerald-700">Free gift</span>}
+                    </td>
+                    <td className="px-3 py-3.5 text-center text-[13.5px] font-bold text-black">{item.quantity}</td>
+                    <td className="px-3 py-3.5 text-right font-mono text-[12.5px] text-slate-600">{money(item.snapshot_price)}</td>
+                    <td className="px-3 py-3.5 text-right font-mono text-[13px] font-bold text-black">{money(item.snapshot_price * item.quantity)}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         </div>
 
-        {/* Totals Section */}
-        <div className="bg-[#FAF7F2] border-t border-[#E0D5C3] p-8 sm:p-12 print:p-6 flex justify-end">
-          {/* Calculations */}
-          <div className="w-full sm:w-1/2 space-y-3">
-            {(() => {
-              const gstItem = order.order_items?.find((i) =>
-                i.snapshot_name.startsWith("GST ("),
-              );
-              const showSubtotal =
-                order.discount_amount > 0 ||
-                order.delivery_fee > 0 ||
-                !!gstItem;
-              return (
-                <>
-                  {showSubtotal && (
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-[#6B5F52] font-bold uppercase tracking-wider">
-                        Subtotal
-                      </span>
-                      <span className="font-bold text-[#000000]">
-                        ₹
-                        {order.subtotal.toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                        })}
-                      </span>
-                    </div>
-                  )}
+        {/* Words, payment and totals */}
+        <div className="mt-6 grid grid-cols-1 gap-8 border-t border-black/10 pt-6 sm:grid-cols-2">
+          <div>
+            <p className={lab}>Amount in words</p>
+            <p className="mt-1.5 text-[13px] font-bold italic text-black">{rupeesInWords(order.grand_total)}</p>
 
-                  {order.discount_amount > 0 && (
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-[#6B5F52] font-bold uppercase tracking-wider">
-                        Discount{" "}
-                        {order.discount_type === "PERCENT"
-                          ? `(${order.discount_value}%)`
-                          : ""}
-                      </span>
-                      <span className="font-bold text-[#C1272D]">
-                        -₹
-                        {order.discount_amount.toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                        })}
-                      </span>
-                    </div>
-                  )}
+            <div className="mt-5 space-y-3 border-t border-black/10 pt-4 text-[13px]">
+              <div className="flex items-baseline justify-between gap-3"><span className="text-slate-600">Paid Via:</span><span className="font-semibold text-black">{paidVia}</span></div>
+              {split && (
+                <div className="space-y-1 rounded-lg bg-slate-50 px-3 py-2 text-[12px] text-slate-600">
+                  {!!order.split_cash && <div className="flex justify-between"><span>Cash</span><b className="font-mono text-black">{money(order.split_cash)}</b></div>}
+                  {!!order.split_upi && <div className="flex justify-between"><span>UPI</span><b className="font-mono text-black">{money(order.split_upi)}</b></div>}
+                  {!!order.split_card && <div className="flex justify-between"><span>Card</span><b className="font-mono text-black">{money(order.split_card)}</b></div>}
+                </div>
+              )}
+              <div className="flex items-baseline justify-between gap-3"><span className="text-slate-600">Amount Paid:</span><b className="font-mono text-black">{money(paid)}</b></div>
+              <div className="flex items-baseline justify-between gap-3"><span className="text-slate-600">Balance Due:</span><b className={`font-mono ${balance > 0 ? "text-[#C1272D]" : "text-emerald-600"}`}>{money(balance)}</b></div>
+            </div>
 
-                  {gstItem && (
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-[#6B5F52] font-bold uppercase tracking-wider">
-                        {gstItem.snapshot_name}
-                      </span>
-                      <span className="font-bold text-[#000000]">
-                        ₹
-                        {(
-                          gstItem.snapshot_price * gstItem.quantity
-                        ).toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                        })}
-                      </span>
-                    </div>
-                  )}
-
-                  {order.delivery_fee > 0 && (
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-[#6B5F52] font-bold uppercase tracking-wider">
-                        Delivery Fee
-                      </span>
-                      <span className="font-bold text-[#000000]">
-                        ₹
-                        {order.delivery_fee.toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                        })}
-                      </span>
-                    </div>
-                  )}
-                </>
-              );
-            })()}
-
-            <div className="border-t border-[#E0D5C3] pt-4 mt-2 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-1 sm:gap-2">
-              <span className="text-sm font-black text-[#1A1A1A] uppercase tracking-widest shrink-0">
-                Total Amount
-              </span>
-              <span className="text-[28px] sm:text-3xl font-black text-[#C1272D] self-end sm:self-auto leading-none mt-1 sm:mt-0">
-                ₹
-                {order.grand_total.toLocaleString(undefined, {
-                  minimumFractionDigits: 2,
-                })}
-              </span>
+            <div className="mt-5 border-t border-black/10 pt-4 text-[12px] text-slate-600">
+              <p className="font-semibold text-black">Terms &amp; Notes:</p>
+              <p className="mt-1">• Thank you for choosing {shop.shopName}.</p>
+              <p>• Please carry this receipt when collecting your order.</p>
             </div>
           </div>
-        </div>
 
-        {/* Footer */}
-        <div className="border-t border-[#E0D5C3]/60 p-6 print:p-4 text-center bg-[#F5EFE6] flex flex-col items-center justify-center gap-1.5">
-          <p className="text-xs font-bold text-[#C1272D] tracking-wider uppercase">
-            Thank you for shopping!
-          </p>
-          <p className="text-[9px] font-bold text-[#6B5F52]/80 uppercase tracking-[0.15em]">
-            Powered by cenexa system @2026
-          </p>
+          <div>
+            <div className="space-y-2 text-[13px]">
+              <div className="flex justify-between"><span className="text-slate-700">Subtotal</span><span className="font-mono font-semibold text-black">{money(order.subtotal)}</span></div>
+              {order.discount_amount > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-slate-700">Discount{order.discount_type === "PERCENT" && order.discount_value ? ` (${order.discount_value}%)` : ""}</span>
+                  <span className="font-mono font-semibold text-[#C1272D]">− {money(order.discount_amount)}</span>
+                </div>
+              )}
+              {order.delivery_fee > 0 && (
+                <div className="flex justify-between"><span className="text-slate-700">Delivery</span><span className="font-mono font-semibold text-black">{money(order.delivery_fee)}</span></div>
+              )}
+              <div className="flex justify-between">
+                <span className="text-slate-500">{gstItem ? gstItem.snapshot_name : "GST"}</span>
+                <span className={gstItem ? "font-mono font-semibold text-black" : "text-slate-500"}>{gstItem ? money(gstAmount) : "Non-GST bill"}</span>
+              </div>
+            </div>
+            <div className="mt-3 flex items-baseline justify-between border-t-2 border-[#C1272D] pt-3">
+              <span className="text-[17px] font-black uppercase tracking-wide text-[#C1272D]">Total</span>
+              <span className="font-mono text-[20px] font-black text-[#C1272D]">{money(order.grand_total)}</span>
+            </div>
+
+            {loyalty && showLoyalty && (
+              <div className="mt-6 rounded-xl border border-black/10 bg-slate-50 p-4 text-[12.5px]">
+                <p className={`${lab} mb-2`}>Loyalty points</p>
+                <div className="grid grid-cols-2 gap-3 font-semibold text-slate-600">
+                  <div>Previous<br /><b className="text-black">{loyalty.prev}</b></div>
+                  <div>Earned<br /><b className="text-emerald-700">+{loyalty.earned}</b></div>
+                  <div>Redeemed<br /><b className="text-[#C1272D]">-{loyalty.used}</b></div>
+                  <div>Remaining<br /><b className="text-black">{loyalty.balance}</b></div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

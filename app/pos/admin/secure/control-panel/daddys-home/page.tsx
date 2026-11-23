@@ -39,6 +39,7 @@ import {
   RefreshCw,
   MessageCircle,
   Star,
+  Check,
   Settings as SettingsIcon,
 } from "lucide-react";
 import InstallAppButton from "@/app/install-app-button";
@@ -48,6 +49,7 @@ import LoyaltyPanel from "./LoyaltyPanel";
 import ExpensesPanel from "./ExpensesPanel";
 import { listExpensesAction } from "@/app/pos/expense-actions";
 import SettingsPanel from "./SettingsPanel";
+import PrintSettingsModal from "@/app/_components/PrintSettingsModal";
 import { listBillOffersAction, loyaltyLookupAction, loyaltyRegisterAction, loyaltySettleAction, recordOffersGivenAction } from "@/app/pos/loyalty-actions";
 import { offerEntitlements } from "@/lib/loyalty/gifts";
 import { pointsValue, redeemCap } from "@/lib/loyalty/engine";
@@ -428,6 +430,7 @@ export default function POSBilling() {
   const [cashReceived, setCashReceived] = useState<number>(0);
   const [applyGST, setApplyGST] = useState<boolean>(false);
   const [gstPercentage, setGstPercentage] = useState<number>(5);
+  const [gstInclusive, setGstInclusive] = useState<boolean>(false);
 
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
   // Distinguishes "still loading" from "genuinely empty", so the picker never
@@ -638,6 +641,8 @@ export default function POSBilling() {
     grandTotal: number;
     orderSnapshot: OrderSnapshot;
   } | null>(null);
+  // Which bill the "Print Settings" dialog is open for (thermal roll / sheet, paper size).
+  const [printSettingsFor, setPrintSettingsFor] = useState<string | null>(null);
   const [promptPhone, setPromptPhone] = useState("");
   const [showPromptPhoneInput, setShowPromptPhoneInput] = useState(false);
   const [isSendingWhatsApp, setIsSendingWhatsApp] = useState(false);
@@ -862,8 +867,14 @@ export default function POSBilling() {
     return offerEntitlements(billOffers, lines, paid, Date.now(), !!member?.customer);
   })();
   const afterDiscount = Math.max(0, subtotal - calculatedDiscount);
-  const gstAmount = applyGST ? afterDiscount * (gstPercentage / 100) : 0;
-  const grandTotal = afterDiscount + gstAmount + deliveryFee;
+  // Exclusive: GST is added on top. Inclusive: the prices already contain it, so it is only shown.
+  const gstAmount = applyGST
+    ? gstInclusive
+      ? Math.round((afterDiscount - afterDiscount / (1 + gstPercentage / 100)) * 100) / 100
+      : afterDiscount * (gstPercentage / 100)
+    : 0;
+  const taxableBase = applyGST && gstInclusive ? afterDiscount - gstAmount : afterDiscount;
+  const grandTotal = afterDiscount + (gstInclusive ? 0 : gstAmount) + deliveryFee;
 
   const randomInvoiceSuffix = () => {
     const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -905,6 +916,14 @@ export default function POSBilling() {
     gstAmount: number;
     grandTotal: number;
     paymentMethod?: "CASH" | "CARD" | "GPAY" | "SPLIT";
+    // For the "Bill Generated" receipt
+    deliveryFee?: number;
+    cashReceived?: number;
+    splitCash?: number;
+    splitUpi?: number;
+    splitCard?: number;
+    upiChannel?: string | null;
+    soldItems?: { name: string; qty: number; price: number; free: boolean }[];
   };
 
   // Validates the current cart, writes the order to the database, updates local
@@ -960,6 +979,13 @@ export default function POSBilling() {
       gstAmount,
       grandTotal,
       paymentMethod,
+      deliveryFee,
+      cashReceived: paymentMethod === "CASH" ? cashReceived : paymentMethod === "SPLIT" ? Number(splitCash) || 0 : grandTotal,
+      splitCash: paymentMethod === "SPLIT" ? Number(splitCash) || 0 : 0,
+      splitUpi: paymentMethod === "SPLIT" ? Number(splitUpi) || 0 : 0,
+      splitCard: paymentMethod === "SPLIT" ? Number(splitCard) || 0 : 0,
+      upiChannel: paymentMethod === "GPAY" || (paymentMethod === "SPLIT" && Number(splitUpi) > 0) ? upiVia || defaultUpiVia : null,
+      soldItems: items.map((i) => ({ name: i.name, qty: i.qty, price: i.price, free: i.desc === "FREE GIFT" })),
     };
 
     const phoneToSave = customerPhone ? `${customerPhone}_${paymentMethod}` : `_${paymentMethod}`;
@@ -1004,7 +1030,7 @@ export default function POSBilling() {
           ...(applyGST && gstAmount > 0
             ? [
                 {
-                  snapshot_name: `GST (${gstPercentage}%)`,
+                  snapshot_name: `GST (${gstPercentage}%${gstInclusive ? " incl." : ""})`,
                   snapshot_desc: "",
                   snapshot_price: gstAmount,
                   quantity: 1,
@@ -1051,7 +1077,7 @@ export default function POSBilling() {
           ? [
               {
                 id: Math.random().toString(),
-                name: `GST (${gstPercentage}%)`,
+                name: `GST (${gstPercentage}%${gstInclusive ? " incl." : ""})`,
                 desc: "",
                 price: gstAmount,
                 qty: 1,
@@ -1095,6 +1121,7 @@ export default function POSBilling() {
     setSplitUpi("");
     setSplitCard("");
     setAddedOffers([]);
+    setGstInclusive(false);
 
     return snapshot;
   };
@@ -2602,7 +2629,7 @@ export default function POSBilling() {
                 </div>
               </div>{" "}
               {/* Right Column - Premium Light Order Panel */}
-              <div className="w-full lg:w-[40%] xl:w-[35%] flex flex-col shrink-0 bg-white text-[#000000] border border-black/10 rounded-2xl shadow-sm lg:sticky lg:top-28 lg:self-start transition-all duration-500 hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:-translate-y-1 overflow-hidden group">
+              <div className="w-full lg:w-[40%] xl:w-[35%] flex flex-col shrink-0 bg-white text-[#000000] border border-black/10 rounded-2xl shadow-sm lg:sticky lg:top-28 lg:self-start lg:max-h-[calc(100vh-8rem)] lg:overflow-y-auto transition-shadow duration-500 hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] overflow-hidden group">
                 <div className="p-4 sm:p-6 pb-4 border-b border-black/10 flex justify-between items-center bg-[#FFFFFF]">
                   <h2 className="text-base font-black flex items-center gap-3 text-[#000000] tracking-tight">
                     <ShoppingBag className="w-4 h-4 text-[#C1272D]" />
@@ -2890,86 +2917,103 @@ export default function POSBilling() {
                       </div>
                     </div>
 
-                    {/* Subtotal & Delivery Breakdown */}
-                    <div className="space-y-2.5 pt-2 border-t border-black/10">
-                      <div className="flex justify-between items-center text-xs font-semibold">
+                    {/* Subtotal & Delivery */}
+                    <div className="space-y-3 pt-3 border-t border-black/10">
+                      <div className="flex justify-between items-center text-[13px] font-semibold">
                         <span className="text-[#000000]">
-                          Subtotal (
-                          {items
-                            .filter((i) => i.name)
-                            .reduce((sum, i) => sum + i.qty, 0)}{" "}
-                          items)
+                          Subtotal ({items.filter((i) => i.name).reduce((sum, i) => sum + i.qty, 0)} items)
                         </span>
-                        <span className="font-bold text-[#000000]">
-                          ₹
-                          {subtotal.toLocaleString(undefined, {
-                            minimumFractionDigits: 2,
-                          })}
+                        <span className="font-mono font-bold text-[#000000]">
+                          ₹{subtotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                         </span>
                       </div>
-
-                      <div className="flex justify-between items-center text-xs font-semibold">
+                      {calculatedDiscount > 0 && (
+                        <div className="flex justify-between items-center text-[13px] font-semibold">
+                          <span className="text-[#000000]">Discount</span>
+                          <span className="font-mono font-bold text-emerald-700">
+                            − ₹{calculatedDiscount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                      )}
+                      <div className="flex justify-between items-center text-[13px] font-semibold">
                         <span className="text-[#000000]">Delivery</span>
                         <input
                           type="number"
-                          className="w-20 text-right bg-white border border-black/10 rounded-lg px-2.5 py-1.5 text-xs font-bold text-[#000000] placeholder:text-[#000000] focus:outline-none focus:border-[#C1272D]"
+                          className="w-24 text-right bg-white border border-black/10 rounded-xl px-3 py-2 text-sm font-bold font-mono text-[#000000] placeholder:text-black/40 focus:outline-none focus:border-[#C1272D] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           value={deliveryFee || ""}
                           onWheel={(e) => e.currentTarget.blur()}
-                          onChange={(e) =>
-                            setDeliveryFee(parseFloat(e.target.value) || 0)
-                          }
+                          onChange={(e) => setDeliveryFee(parseFloat(e.target.value) || 0)}
                           placeholder="0"
                         />
                       </div>
                     </div>
 
-                    {/* GST Section (Below Delivery, Above Grand Total) */}
-                    <div className="pt-2">
-                      <div className="flex flex-wrap justify-between items-center gap-2">
-                        <label className="flex items-center gap-3 cursor-pointer">
-                          <div className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${applyGST ? 'bg-[#C1272D]' : 'bg-[#E0D5C3]'}`}>
-                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${applyGST ? 'translate-x-4' : 'translate-x-1'}`} />
-                          </div>
-                          <input
-                            type="checkbox"
-                            className="sr-only"
-                            checked={applyGST}
-                            onChange={(e) => setApplyGST(e.target.checked)}
-                          />
-                          <span className="text-xs font-bold text-[#000000] uppercase tracking-wider">
-                            Apply GST
-                          </span>
-                        </label>
-                        {applyGST && (
-                          <div className="flex items-center gap-2">
-                            <div className="flex items-center gap-1">
-                              <input
-                                type="number"
-                                className="w-14 text-right bg-white border border-black/10 rounded-lg px-2 py-1 text-xs font-bold text-[#000000] focus:outline-none focus:border-[#C1272D] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                value={gstPercentage || ""}
-                                onChange={(e) => setGstPercentage(parseFloat(e.target.value) || 0)}
-                                placeholder="%"
-                              />
-                              <span className="text-xs font-bold text-[#000000]">%</span>
-                            </div>
-                            <span className="text-xs font-bold text-[#C1272D] w-16 text-right">
-                              ₹{gstAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                            </span>
-                          </div>
-                        )}
-                      </div>
+                    {/* Non-GST bill / GST invoice */}
+                    <div className="flex rounded-full border border-black/10 bg-white p-1">
+                      <button
+                        type="button"
+                        onClick={() => setApplyGST(false)}
+                        className={`flex-1 rounded-full py-2.5 text-[11px] font-extrabold uppercase tracking-wider cursor-pointer transition ${!applyGST ? "bg-[#111] text-white shadow-sm" : "text-[#000000] hover:bg-black/5"}`}
+                      >
+                        Non-GST Bill
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setApplyGST(true)}
+                        className={`flex-1 rounded-full py-2.5 text-[11px] font-extrabold uppercase tracking-wider cursor-pointer transition ${applyGST ? "bg-[#C1272D] text-white shadow-sm" : "text-[#000000] hover:bg-black/5"}`}
+                      >
+                        GST Invoice
+                      </button>
                     </div>
 
+                    {applyGST && (
+                      <div className="rounded-2xl border border-black/10 bg-white p-3 space-y-3">
+                        <div className="flex rounded-xl border border-black/10 p-1">
+                          <button
+                            type="button"
+                            onClick={() => setGstInclusive(false)}
+                            className={`flex-1 rounded-lg py-2 text-[10px] font-extrabold uppercase tracking-wider cursor-pointer transition ${!gstInclusive ? "bg-[#111] text-white" : "text-[#000000] hover:bg-black/5"}`}
+                          >
+                            Exclusive (+GST)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setGstInclusive(true)}
+                            className={`flex-1 rounded-lg py-2 text-[10px] font-extrabold uppercase tracking-wider cursor-pointer transition ${gstInclusive ? "bg-[#111] text-white" : "text-[#000000] hover:bg-black/5"}`}
+                          >
+                            Inclusive (Tax incl.)
+                          </button>
+                        </div>
+                        <div className="flex items-center justify-between px-1">
+                          <span className="text-[13px] font-extrabold text-[#000000]">GST RATE</span>
+                          <span className="flex items-center gap-1.5">
+                            <input
+                              type="number"
+                              className="w-16 text-center bg-white border border-black/10 rounded-lg px-2 py-1.5 text-sm font-bold text-[#000000] focus:outline-none focus:border-[#C1272D] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              value={gstPercentage || ""}
+                              onWheel={(e) => e.currentTarget.blur()}
+                              onChange={(e) => setGstPercentage(parseFloat(e.target.value) || 0)}
+                              placeholder="%"
+                            />
+                            <span className="text-sm font-bold text-[#000000]">%</span>
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center px-1 text-[12px] text-[#6B5F52]">
+                          <span>Taxable Base Value</span>
+                          <span className="font-mono font-bold text-[#000000]">₹{taxableBase.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+                        </div>
+                        <div className="flex justify-between items-center px-1 text-[12px] font-bold">
+                          <span className="text-[#000000]">GST Total ({gstInclusive ? `included @ ${gstPercentage}%` : `@ ${gstPercentage}%`})</span>
+                          <span className="font-mono font-black text-[#C1272D]">₹{gstAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Grand Total */}
-                    <div className="flex justify-between items-center text-sm font-bold pt-4 border-t border-black/10">
-                      <span className="text-[#000000] uppercase tracking-wider">
-                        Grand Total
-                      </span>
-                      <span className="text-xl text-[#C1272D] font-black">
-                        ₹
-                        {grandTotal.toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                        })}
+                    <div className="flex justify-between items-center pt-4 border-t border-black/10">
+                      <span className="text-[15px] font-black text-[#000000] uppercase tracking-wide">Grand Total</span>
+                      <span className="text-[26px] text-[#C1272D] font-black font-mono">
+                        ₹{grandTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                       </span>
                     </div>
 
@@ -3005,6 +3049,41 @@ export default function POSBilling() {
                         </button>
                       </div>
                     </div>
+
+                    {/* Cash payment */}
+                    {paymentMethod === "CASH" && (
+                      <div className="rounded-2xl border border-black/10 bg-white p-4">
+                        <div className="flex items-start justify-between gap-2 mb-3">
+                          <div>
+                            <p className="text-[10px] font-extrabold uppercase tracking-wider text-[#6B5F52]">Cash Payment</p>
+                            <p className="text-[12px] font-extrabold text-[#000000]">Amount Received (₹)</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setCashReceived(grandTotal)}
+                            className="text-[10px] font-bold text-[#C1272D] bg-[#C1272D]/10 px-2.5 py-1 rounded-md hover:bg-[#C1272D]/20 cursor-pointer"
+                          >
+                            Exact Amount
+                          </button>
+                        </div>
+                        <input
+                          type="number"
+                          className="w-full bg-white border border-black/10 focus:border-[#C1272D] rounded-xl px-4 py-3 text-base font-bold text-[#000000] placeholder:text-black/40 focus:outline-none transition-colors"
+                          value={cashReceived || ""}
+                          onWheel={(e) => e.currentTarget.blur()}
+                          onChange={(e) => setCashReceived(parseFloat(e.target.value) || 0)}
+                          placeholder="0.00"
+                        />
+                        {cashReceived > 0 && (
+                          <div className="mt-3 flex items-center justify-between rounded-lg bg-black/[0.04] px-3 py-2 text-[12px]">
+                            <span className="font-extrabold uppercase tracking-wide text-[#000000]">Change to Return</span>
+                            <span className={`font-mono font-black ${cashReceived >= grandTotal ? "text-emerald-600" : "text-[#C1272D]"}`}>
+                              ₹{Math.max(0, cashReceived - grandTotal).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {/* Split: any mix of cash, UPI and card; each box can take "the rest" in one tap */}
                     {paymentMethod === "SPLIT" && (() => {
@@ -3072,54 +3151,6 @@ export default function POSBilling() {
                         </div>
                       );
                     })()}
-
-                    {paymentMethod === "CASH" && (
-                      <>
-                        <div className="bg-[#FFFFFF]/40 border border-black/10 rounded-xl p-4 mt-2">
-                          <div className="flex items-center justify-between mb-2.5">
-                            <label className="block text-[10px] font-bold text-[#000000]">
-                              Amount Received (₹)
-                            </label>
-                            <button
-                              onClick={() => setCashReceived(grandTotal)}
-                              className="text-[10px] font-bold text-[#C1272D] bg-[#C1272D]/10 px-2 py-1 rounded hover:bg-[#C1272D]/20 transition-colors"
-                            >
-                              Exact Amount
-                            </button>
-                          </div>
-                          <input
-                            type="number"
-                            className="w-full bg-white border border-black/10 focus:border-[#C1272D] rounded-lg px-3 py-2 text-base font-bold text-[#000000] placeholder:text-[#000000] focus:outline-none transition-colors"
-                            value={cashReceived || ""}
-                            onWheel={(e) => e.currentTarget.blur()}
-                            onChange={(e) =>
-                              setCashReceived(parseFloat(e.target.value) || 0)
-                            }
-                            placeholder="0.00"
-                          />
-                        </div>
-
-                        {/* Change Return */}
-                        {cashReceived > 0 && (
-                          <div className="flex justify-between items-center bg-white border border-black/10 rounded-lg p-3 text-xs mt-2">
-                            <span className="font-bold text-[#000000] uppercase tracking-[0.05em]">
-                              Change Return
-                            </span>
-                            <span
-                              className={`font-black text-sm ${cashReceived >= grandTotal ? "text-[#1A1A1A]" : "text-[#C1272D]"}`}
-                            >
-                              ₹
-                              {Math.max(
-                                0,
-                                cashReceived - grandTotal,
-                              ).toLocaleString(undefined, {
-                                minimumFractionDigits: 2,
-                              })}
-                            </span>
-                          </div>
-                        )}
-                      </>
-                    )}
 
                     {/* UPI: how it arrived, counter QR, and the WhatsApp payment link */}
                     {paymentMethod === "GPAY" && (
@@ -3198,26 +3229,18 @@ export default function POSBilling() {
                     <button
                       onClick={handleCompleteSale}
                       disabled={isCompletingSale || isSavingOrder}
-                      className="w-full mt-2 bg-[#C1272D] hover:bg-[#9E1B20] text-white py-3.5 rounded-lg font-bold text-xs uppercase tracking-[0.1em] flex items-center justify-center gap-2 transition-transform active:scale-[0.98] shadow-[0_4px_14px_rgba(193,39,45,0.35)] cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                      className="w-full mt-2 bg-[#C1272D] hover:bg-[#9E1B20] text-white py-4 rounded-2xl font-extrabold text-[12px] uppercase tracking-[0.12em] flex items-center justify-center gap-2 transition-transform active:scale-[0.98] shadow-[0_8px_20px_-8px_rgba(193,39,45,0.7)] cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                     >
-                      {isCompletingSale ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Receipt className="w-4 h-4" />
-                      )}
+                      {isCompletingSale ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                       {isCompletingSale ? "Processing…" : "Complete Sale"}
                     </button>
 
                     <button
                       onClick={handleSaveOrder}
                       disabled={isSavingOrder || isCompletingSale}
-                      className="w-full mt-2 bg-white hover:bg-[#F5EFE6] text-[#000000] border border-black/15 py-3 rounded-lg font-bold text-[10px] uppercase tracking-[0.1em] flex items-center justify-center gap-2 transition-transform active:scale-[0.98] shadow-sm cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                      className="w-full mt-2 bg-white hover:bg-amber-50 text-amber-800 border-2 border-amber-400 py-3.5 rounded-2xl font-extrabold text-[11px] uppercase tracking-[0.12em] flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                     >
-                      {isSavingOrder ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Save className="w-3.5 h-3.5 text-[#C1272D]" />
-                      )}
+                      {isSavingOrder ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                       {isSavingOrder ? "Saving…" : "Save Order"}
                     </button>
                   </div>
@@ -4780,155 +4803,200 @@ export default function POSBilling() {
         </footer>
       </main>
 
-      {/* "Receipt or WhatsApp?" Modal after Complete Sale */}
-      {saleCompletedPrompt && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-black/10 overflow-hidden transform scale-100 animate-in zoom-in-95 duration-200">
-            {/* Modal Header */}
-            <div className="bg-[#FAF7F2] p-6 border-b border-black/10 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-[#10B981]/15 text-[#059669] flex items-center justify-center">
-                  <ShieldCheck className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="font-black text-base text-[#000000] tracking-tight">
-                    Sale Completed!
-                  </h3>
-                  <p className="text-xs font-semibold text-[#6B5F52]">
-                    Order #{saleCompletedPrompt.orderId} &middot; ₹{saleCompletedPrompt.grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setSaleCompletedPrompt(null);
-                  setShowPromptPhoneInput(false);
-                }}
-                className="w-8 h-8 rounded-lg bg-black/5 hover:bg-black/10 flex items-center justify-center text-[#000000] transition-colors cursor-pointer"
-                title="Close"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-6 space-y-6">
-              <div className="text-center">
-                <h4 className="text-lg font-black text-[#000000] tracking-tight">
-                  Receipt or WhatsApp?
-                </h4>
-                <p className="text-xs text-[#6B5F52] font-semibold mt-1">
-                  Choose how you would like to issue the bill to the customer
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Option 1: Receipt */}
-                <button
-                  onClick={() => {
-                    const orderId = saleCompletedPrompt.orderId;
-                    setSaleCompletedPrompt(null);
-                    setShowPromptPhoneInput(false);
-                    setActiveInvoiceId(orderId);
-                  }}
-                  className="group flex flex-col items-center justify-center p-5 rounded-xl border-2 border-black/10 hover:border-[#C1272D] bg-[#FFFFFF] hover:bg-[#C1272D]/5 transition-all text-center cursor-pointer shadow-xs"
-                >
-                  <div className="w-12 h-12 rounded-full bg-[#C1272D]/10 text-[#C1272D] group-hover:bg-[#C1272D] group-hover:text-white flex items-center justify-center transition-colors mb-3">
-                    <Printer className="w-6 h-6" />
-                  </div>
-                  <span className="font-black text-sm text-[#000000] group-hover:text-[#C1272D] uppercase tracking-wider">
-                    Receipt
-                  </span>
-                  <span className="text-[11px] font-semibold text-[#6B5F52] mt-1">
-                    Print or view detailed paper / digital receipt
-                  </span>
-                </button>
-
-                {/* Option 2: WhatsApp */}
-                <button
-                  onClick={() => {
-                    if (saleCompletedPrompt.customerPhone && saleCompletedPrompt.customerPhone.length === 10) {
-                      sendWhatsAppForSnapshot(
-                        saleCompletedPrompt.orderSnapshot,
-                        saleCompletedPrompt.customerPhone,
-                      );
-                      setSaleCompletedPrompt(null);
-                      setShowPromptPhoneInput(false);
-                    } else {
-                      setShowPromptPhoneInput(true);
-                    }
-                  }}
-                  className="group flex flex-col items-center justify-center p-5 rounded-xl border-2 border-black/10 hover:border-[#10B981] bg-[#FFFFFF] hover:bg-[#10B981]/5 transition-all text-center cursor-pointer shadow-xs"
-                >
-                  <div className="w-12 h-12 rounded-full bg-[#10B981]/10 text-[#10B981] group-hover:bg-[#10B981] group-hover:text-white flex items-center justify-center transition-colors mb-3">
-                    <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.012c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z" />
-                    </svg>
-                  </div>
-                  <span className="font-black text-sm text-[#000000] group-hover:text-[#10B981] uppercase tracking-wider">
-                    WhatsApp
-                  </span>
-                  <span className="text-[11px] font-semibold text-[#6B5F52] mt-1">
-                    {saleCompletedPrompt.customerPhone && saleCompletedPrompt.customerPhone.length === 10
-                      ? `Send to +91 ${saleCompletedPrompt.customerPhone}`
-                      : "Send bill via WhatsApp"}
-                  </span>
-                </button>
-              </div>
-
-              {/* Inline WhatsApp Phone Input */}
-              {showPromptPhoneInput && (
-                <div className="bg-[#FAF7F2] border border-black/10 rounded-xl p-4 space-y-3 animate-in fade-in duration-150">
-                  <label className="block text-[11px] font-bold text-[#000000] uppercase tracking-wider">
-                    Enter WhatsApp Mobile Number:
-                  </label>
-                  <div className="flex gap-2">
-                    <div className="flex items-center bg-white border border-black/10 rounded-lg px-3 text-xs font-bold text-[#6B5F52]">
-                      +91
+      {/* "Bill Generated" receipt after Complete Sale */}
+      {saleCompletedPrompt && (() => {
+        const snap = saleCompletedPrompt.orderSnapshot;
+        const money = (n: number) => `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        const method = snap.paymentMethod ?? "CASH";
+        const modeBadge = method === "GPAY" ? "UPI" : method;
+        const channelLabel = snap.upiChannel ? UPI_CHANNELS.find((c) => c.key === snap.upiChannel)?.label : "";
+        const paidVia =
+          method === "CASH" ? "Cash" : method === "CARD" ? "Card" : method === "GPAY" ? `UPI${channelLabel ? ` · ${channelLabel}` : ""}` :
+          [snap.splitCash ? "Cash" : "", snap.splitUpi ? "UPI" : "", snap.splitCard ? "Card" : ""].filter(Boolean).join(" + ");
+        const received = method === "CASH" ? (snap.cashReceived && snap.cashReceived > 0 ? snap.cashReceived : snap.grandTotal) : snap.grandTotal;
+        const balanceDue = Math.max(0, Math.round((snap.grandTotal - received) * 100) / 100);
+        const change = method === "CASH" ? Math.max(0, Math.round((received - snap.grandTotal) * 100) / 100) : 0;
+        const close = () => {
+          setSaleCompletedPrompt(null);
+          setShowPromptPhoneInput(false);
+          setSavedLoyaltyNote("");
+        };
+        const row = "flex items-center justify-between gap-4 text-[14px]";
+        return (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-[560px] max-h-[94vh] overflow-y-auto border border-black/10 animate-in zoom-in-95 duration-200">
+              {/* Header */}
+              <div className="px-7 pt-7 pb-4 border-b border-black/10">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <h3 className="text-[28px] font-black tracking-tight text-black">Bill Generated</h3>
+                      <span className="rounded-md bg-black/5 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider text-black">
+                        {snap.applyGST ? `GST ${snap.gstPercentage}%` : "Non-GST"}
+                      </span>
                     </div>
-                    <input
-                      type="tel"
-                      maxLength={10}
-                      placeholder="10-digit number"
-                      className="flex-1 bg-white border border-black/10 focus:border-[#10B981] rounded-lg px-3 py-2 text-xs font-bold text-[#000000] focus:outline-none"
-                      value={promptPhone}
-                      onChange={(e) => setPromptPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
-                      autoFocus
-                    />
-                    <button
-                      onClick={() => {
-                        if (!promptPhone || promptPhone.length !== 10) {
-                          alert("Please enter a valid 10-digit mobile number.");
-                          return;
-                        }
-                        sendWhatsAppForSnapshot(saleCompletedPrompt.orderSnapshot, promptPhone);
-                        setSaleCompletedPrompt(null);
-                        setShowPromptPhoneInput(false);
-                      }}
-                      disabled={promptPhone.length !== 10}
-                      className="bg-[#10B981] hover:bg-[#059669] text-white px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors disabled:opacity-50 cursor-pointer shrink-0"
-                    >
-                      Send Bill
-                    </button>
+                    <p className="mt-1 font-mono text-[12px] font-semibold tracking-wide text-[#C1272D]">#{saleCompletedPrompt.orderId}</p>
+                  </div>
+                  <button onClick={close} className="w-9 h-9 rounded-lg hover:bg-black/5 flex items-center justify-center text-slate-600 cursor-pointer" title="Close" aria-label="Close">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-7 space-y-5">
+                {/* Payment receipt */}
+                <div className="rounded-2xl border border-black/10 p-6">
+                  <div className="flex items-center justify-between border-b border-black/10 pb-3 mb-4">
+                    <span className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Payment Receipt</span>
+                    <span className="rounded-md bg-[#C1272D]/10 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider text-[#C1272D]">{modeBadge}</span>
+                  </div>
+                  <div className="space-y-2 pb-4 border-b border-dashed border-black/15">
+                    <div className={row}><span className="text-slate-600">Subtotal</span><b className="text-black">{money(snap.subtotal)}</b></div>
+                    {snap.discount > 0 && (
+                      <div className={row}><span className="text-slate-600">Discount</span><b className="text-emerald-700">− {money(snap.discount)}</b></div>
+                    )}
+                    {(snap.deliveryFee ?? 0) > 0 && (
+                      <div className={row}><span className="text-slate-600">Delivery</span><b className="text-black">{money(snap.deliveryFee ?? 0)}</b></div>
+                    )}
+                    <div className={row}>
+                      <span className="text-slate-600">{snap.applyGST ? `GST (${snap.gstPercentage}%)` : "GST"}</span>
+                      <b className="text-black">{snap.applyGST ? money(snap.gstAmount) : "Non-GST bill"}</b>
+                    </div>
+                  </div>
+                  <div className="space-y-3 pt-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-[15px] font-semibold text-slate-600">Grand Total</span>
+                      <b className="text-[28px] font-black text-black">{money(snap.grandTotal)}</b>
+                    </div>
+                    <div className={row}><span className="text-slate-600">Paid Via:</span><b className="text-black">{paidVia}</b></div>
+                    {method === "SPLIT" && (
+                      <div className="rounded-lg bg-black/[0.03] px-3 py-2 text-[12.5px] text-slate-600 space-y-1">
+                        {!!snap.splitCash && <div className="flex justify-between"><span>Cash</span><b className="text-black">{money(snap.splitCash)}</b></div>}
+                        {!!snap.splitUpi && <div className="flex justify-between"><span>UPI</span><b className="text-black">{money(snap.splitUpi)}</b></div>}
+                        {!!snap.splitCard && <div className="flex justify-between"><span>Card</span><b className="text-black">{money(snap.splitCard)}</b></div>}
+                      </div>
+                    )}
+                    <div className={row}><span className="text-slate-600">Amount Paid:</span><b className="text-black">{money(received)}</b></div>
+                    <div className={row}>
+                      <span className="text-slate-600">Balance Due:</span>
+                      <b className={balanceDue > 0 ? "text-[#C1272D]" : "text-emerald-600"}>{money(balanceDue)}</b>
+                    </div>
+                    {method === "CASH" && (
+                      <div className="flex items-center justify-between rounded-xl bg-black/[0.05] px-5 py-4">
+                        <span className="text-[14px] font-extrabold text-[#6B5F52]">Change Returned</span>
+                        <b className="text-[22px] font-black text-[#6B5F52]">{money(change)}</b>
+                      </div>
+                    )}
+                    {savedLoyaltyNote && (
+                      <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-[12.5px] font-semibold text-emerald-800">
+                        ⭐ {savedLoyaltyNote}
+                      </div>
+                    )}
                   </div>
                 </div>
-              )}
 
-              {/* Bottom dismiss button */}
-              <div className="pt-2 border-t border-black/10 flex justify-end">
-                <button
-                  onClick={() => {
-                    setSaleCompletedPrompt(null);
-                    setShowPromptPhoneInput(false);
-                  }}
-                  className="w-full sm:w-auto px-6 py-2.5 bg-black/5 hover:bg-black/10 text-[#000000] font-bold text-xs rounded-lg uppercase tracking-wider transition-colors cursor-pointer"
-                >
-                  Done / Next Sale
-                </button>
+                {/* Actions */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <button
+                    onClick={() => setPrintSettingsFor(saleCompletedPrompt.orderId)}
+                    className="flex items-center justify-center gap-2 rounded-xl border border-black/15 bg-white px-3 py-4 text-[12px] font-extrabold uppercase tracking-wide text-black hover:bg-slate-50 cursor-pointer"
+                  >
+                    <Printer className="w-4 h-4 text-[#C1272D]" /> Print Receipt
+                  </button>
+                  <button
+                    onClick={() => {
+                      const orderId = saleCompletedPrompt.orderId;
+                      close();
+                      setActiveInvoiceId(orderId);
+                    }}
+                    className="flex items-center justify-center gap-2 rounded-xl border border-black/15 bg-white px-3 py-4 text-[12px] font-extrabold uppercase tracking-wide text-black hover:bg-slate-50 cursor-pointer"
+                  >
+                    <Eye className="w-4 h-4 text-[#C1272D]" /> View
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (saleCompletedPrompt.customerPhone && saleCompletedPrompt.customerPhone.length === 10) {
+                        sendWhatsAppForSnapshot(snap, saleCompletedPrompt.customerPhone);
+                        close();
+                      } else {
+                        setShowPromptPhoneInput(true);
+                      }
+                    }}
+                    className="flex items-center justify-center gap-2 rounded-xl bg-[#10B981] px-3 py-4 text-[12px] font-extrabold uppercase leading-tight tracking-wide text-white hover:bg-[#059669] cursor-pointer"
+                  >
+                    <MessageCircle className="w-4 h-4 shrink-0" /> WhatsApp Invoice
+                  </button>
+                  <button
+                    onClick={close}
+                    className="flex items-center justify-center gap-2 rounded-xl bg-black px-3 py-4 text-[12px] font-extrabold uppercase tracking-wide text-white hover:bg-slate-800 cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" /> New Sale
+                  </button>
+                </div>
+
+                {/* Inline WhatsApp phone input, when the bill has no number */}
+                {showPromptPhoneInput && (
+                  <div className="bg-[#FAF7F2] border border-black/10 rounded-xl p-4 space-y-3 animate-in fade-in duration-150">
+                    <label className="block text-[11px] font-bold text-black uppercase tracking-wider">Enter WhatsApp Mobile Number:</label>
+                    <div className="flex gap-2">
+                      <div className="flex items-center bg-white border border-black/10 rounded-lg px-3 text-xs font-bold text-[#6B5F52]">+91</div>
+                      <input
+                        type="tel"
+                        maxLength={10}
+                        placeholder="10-digit number"
+                        className="flex-1 bg-white border border-black/10 focus:border-[#10B981] rounded-lg px-3 py-2 text-xs font-bold text-black focus:outline-none"
+                        value={promptPhone}
+                        onChange={(e) => setPromptPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => {
+                          if (!promptPhone || promptPhone.length !== 10) {
+                            alert("Please enter a valid 10-digit mobile number.");
+                            return;
+                          }
+                          sendWhatsAppForSnapshot(snap, promptPhone);
+                          close();
+                        }}
+                        disabled={promptPhone.length !== 10}
+                        className="bg-[#10B981] hover:bg-[#059669] text-white px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors disabled:opacity-50 cursor-pointer shrink-0"
+                      >
+                        Send Bill
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Items sold */}
+                <div className="rounded-2xl border border-black/10 p-6">
+                  <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500 border-b border-black/10 pb-3 mb-3">Items Sold</p>
+                  <ul className="space-y-2.5">
+                    {(snap.soldItems ?? []).map((it, i) => (
+                      <li key={i} className="flex items-baseline justify-between gap-3 text-[14px]">
+                        <span className="min-w-0 text-black font-semibold">
+                          {it.name}
+                          <span className="ml-2 text-[11.5px] font-semibold text-slate-400">× {it.qty} {it.qty === 1 ? "piece" : "pieces"}</span>
+                          {it.free && <span className="ml-2 rounded bg-emerald-50 px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-emerald-700">Free gift</span>}
+                        </span>
+                        <b className="shrink-0 text-black">{it.free ? "FREE" : money(it.price * it.qty)}</b>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        );
+      })()}
+
+      {printSettingsFor && (
+        <PrintSettingsModal
+          onCancel={() => setPrintSettingsFor(null)}
+          onPrint={(p) => {
+            window.open(`/invoice/${printSettingsFor}?print=true&type=${p.type}&size=${p.size}`, "_blank");
+            setPrintSettingsFor(null);
+          }}
+        />
       )}
 
       {/* Invoice Modal */}
@@ -4945,7 +5013,7 @@ export default function POSBilling() {
                   onClick={() => {
                     const id = activeInvoiceId;
                     if (!id) return;
-                    window.open(`/invoice/${id}?print=true`, "_blank");
+                    setPrintSettingsFor(id);
                   }}
                   className="flex items-center gap-1.5 px-3 h-8 bg-[#C1272D] text-white hover:bg-[#9E1B20] rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors cursor-pointer shadow-sm"
                   title="Print / Save PDF"
