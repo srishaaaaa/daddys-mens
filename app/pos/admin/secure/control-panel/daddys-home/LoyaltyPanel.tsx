@@ -458,11 +458,27 @@ function RewardRecords({ s }: { s: Shared }) {
 }
 
 /* ------------------------------------------------------------------ Customer CRM */
+/* Each customer group gets its own starting message; edits are kept per group while the page is open. */
+const CRM_MESSAGES: Record<Segment | "all", string> = {
+  all: "Hi {name}! Thank you for being part of {shop}. See you again soon!",
+  new: "Hi {name}! Welcome to {shop}. We're so glad you joined us — see you again soon!",
+  regular: "Hi {name}! Thanks for being a regular at {shop}. Keep collecting points for free gifts!",
+  frequent: "Hi {name}! You're one of our most frequent visitors at {shop}. Thank you — your next reward is closer than you think!",
+  high_value: "Hi {name}! Thank you for being one of our most valued customers at {shop}. We have something special for you on your next visit.",
+  vip: "Hi {name}! As a VIP of {shop}, you get our very best. Visit us soon for an exclusive treat!",
+  at_risk: "Hi {name}! We miss you at {shop}. Come back soon — we'd love to see you again!",
+  inactive: "Hi {name}! It's been a while since your last visit to {shop}. Drop by — we have something new for you!",
+  lost: "Hi {name}! We'd love to welcome you back to {shop}. Visit us again and we'll make it worth your while.",
+};
+
 function Crm({ s }: { s: Shared }) {
   const { d, range } = s;
   const [q, setQ] = useState("");
   const [seg, setSeg] = useState<Segment | null>(null);
-  const [text, setText] = useState("Hi {name}! Thank you for being part of {shop}. See you again soon!");
+  const [texts, setTexts] = useState<Partial<Record<Segment | "all", string>>>({});
+  const key: Segment | "all" = seg ?? "all";
+  const text = texts[key] ?? CRM_MESSAGES[key];
+  const setText = (v: string) => setTexts((t) => ({ ...t, [key]: v }));
   const all = d.customers.filter((c) => c.status === "active");
   const segOf = (id: string) => d.segments[id] ?? null;
   const rows = all.filter((c) => (!seg || segOf(c.id) === seg) && (!q || c.name.toLowerCase().includes(q.toLowerCase()) || c.phone.includes(q.replace(/\D/g, "") || "\u0000")) && (range ? d.purchases[c.id]?.some((p) => within(p.createdAt, range)) || within(c.createdAt, range) : true));
@@ -480,13 +496,22 @@ function Crm({ s }: { s: Shared }) {
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <div className="flex min-w-[240px] flex-1 items-center gap-2 rounded-xl bg-[#F6F3E9] pl-4"><Search className="h-4 w-4 text-slate-400" /><SearchInput value={q} onChange={setQ} placeholder="Search by name or mobile number…" /></div>
         {seg && <Btn onClick={() => setSeg(null)}>Show everyone</Btn>}
-        <ExcelBtn disabled={!rows.length} onClick={() => downloadCsv("customer-crm", [["Name", "Mobile", "Group", "Visits", "Spent", "Avg bill", "Last visit", "Points"], ...rows.map((c) => { const st = d.stats[c.id]; return [c.name, c.phone, SEGMENTS.find((x) => x.key === segOf(c.id))?.label ?? "No bills yet", st?.visits ?? 0, st?.spent ?? 0, st?.aov ?? 0, st?.last ? fmtDate(st.last) : "", c.available]; })])} />
+        <ExcelBtn disabled={!rows.length} onClick={() => downloadCsv(`customer-crm${seg ? `-${seg}` : ""}`, [["Name", "Mobile", "Group", "Visits", "Spent", "Avg bill", "Last visit", "Points"], ...rows.map((c) => { const st = d.stats[c.id]; return [c.name, c.phone, SEGMENTS.find((x) => x.key === segOf(c.id))?.label ?? "No bills yet", st?.visits ?? 0, st?.spent ?? 0, st?.aov ?? 0, st?.last ? fmtDate(st.last) : "", c.available]; })])} />
       </div>
       <label className="mb-1 block text-[10.5px] font-bold uppercase tracking-[0.12em] text-slate-600">WhatsApp message{seg ? ` for “${SEGMENTS.find((x) => x.key === seg)?.label}”` : ""}</label>
       <textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} className="w-full rounded-xl border border-black/10 bg-white px-4 py-3 text-[13px] outline-none focus:border-[#C1272D]" />
       <p className="mb-3 mt-1 text-[11.5px] text-slate-500">{"{name}"} and {"{shop}"} are filled in for each customer. Only customers who agreed to WhatsApp messages get a Send button.</p>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[13px] font-bold text-slate-800">
+          Showing: <span className="text-[#C1272D]">{seg ? SEGMENTS.find((x) => x.key === seg)?.label : "Everyone"}</span>{" "}
+          <span className="font-semibold text-slate-500">· {rows.length} customer{rows.length === 1 ? "" : "s"}</span>
+        </p>
+        <p className="text-[11.5px] text-slate-500">
+          Send uses the message above{seg ? ` for “${SEGMENTS.find((x) => x.key === seg)?.label}”` : ""}.
+        </p>
+      </div>
       {!rows.length ? (
-        <div className="rounded-2xl border border-black/10 bg-white py-12 text-center"><Users className="mx-auto mb-2 h-6 w-6 text-slate-300" /><p className="text-sm font-bold">No customers here</p><p className="text-xs text-slate-500">Try another group or search.</p></div>
+        <div className="rounded-2xl border border-black/10 bg-white py-12 text-center"><Users className="mx-auto mb-2 h-6 w-6 text-slate-300" /><p className="text-sm font-bold">No customers here</p><p className="text-xs text-slate-500">{seg ? `No customers are in “${SEGMENTS.find((x) => x.key === seg)?.label}” right now. Try another group or search.` : "Try another group or search."}</p></div>
       ) : (
         <div className="overflow-x-auto rounded-2xl border border-black/10 bg-white">
           <table className="w-full min-w-[820px] border-collapse text-left">
