@@ -2203,7 +2203,7 @@ export default function POSBilling() {
         <div className="w-64 flex flex-col justify-between h-full shrink-0 overflow-hidden relative">
           <div className="flex flex-col flex-1 min-h-0 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {/* Header branding */}
-            <div className="p-6 [@media(max-height:780px)]:p-3 border-b border-white/10 flex items-center justify-between gap-3">
+            <div className="p-6 [@media(max-height:820px)]:p-3 border-b border-white/10 flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 bg-[#1A1A1A] border border-white/10 rounded-xl flex items-center justify-center overflow-hidden shrink-0">
                   <img
@@ -2233,7 +2233,7 @@ export default function POSBilling() {
             <nav className="px-4 py-6 space-y-2">
               <button
                 onClick={() => selectTab("billing")}
-                className={`w-full flex items-center gap-4 px-4 py-3.5 [@media(max-height:780px)]:py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+                className={`w-full flex items-center gap-4 px-4 py-3.5 [@media(max-height:820px)]:py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
                   activeTab === "billing"
                     ? "bg-[#FFFFFF] text-[#C1272D] shadow-lg scale-102"
                     : "text-white font-bold hover:bg-white/10 hover:text-white"
@@ -2246,7 +2246,7 @@ export default function POSBilling() {
                 <>
                   <button
                     onClick={() => selectTab("orders")}
-                    className={`w-full flex items-center gap-4 px-4 py-3.5 [@media(max-height:780px)]:py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+                    className={`w-full flex items-center gap-4 px-4 py-3.5 [@media(max-height:820px)]:py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
                       activeTab === "orders"
                         ? "bg-[#FFFFFF] text-[#C1272D] shadow-lg scale-102"
                         : "text-white font-bold hover:bg-white/10 hover:text-white"
@@ -2257,7 +2257,7 @@ export default function POSBilling() {
                   </button>
                   <button
                     onClick={() => selectTab("inventory")}
-                    className={`w-full flex items-center gap-4 px-4 py-3.5 [@media(max-height:780px)]:py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+                    className={`w-full flex items-center gap-4 px-4 py-3.5 [@media(max-height:820px)]:py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
                       activeTab === "inventory"
                         ? "bg-[#FFFFFF] text-[#C1272D] shadow-lg scale-102"
                         : "text-white font-bold hover:bg-white/10 hover:text-white"
@@ -2268,7 +2268,7 @@ export default function POSBilling() {
                   </button>
                   <button
                     onClick={() => selectTab("analytics")}
-                    className={`w-full flex items-center gap-4 px-4 py-3.5 [@media(max-height:780px)]:py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+                    className={`w-full flex items-center gap-4 px-4 py-3.5 [@media(max-height:820px)]:py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
                       activeTab === "analytics"
                         ? "bg-[#FFFFFF] text-[#C1272D] shadow-lg scale-102"
                         : "text-white font-bold hover:bg-white/10 hover:text-white"
@@ -2279,7 +2279,7 @@ export default function POSBilling() {
                   </button>
                   <button
                     onClick={() => selectTab("expenses")}
-                    className={`w-full flex items-center gap-4 px-4 py-3.5 [@media(max-height:780px)]:py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+                    className={`w-full flex items-center gap-4 px-4 py-3.5 [@media(max-height:820px)]:py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
                       activeTab === "expenses"
                         ? "bg-[#FFFFFF] text-[#C1272D] shadow-lg scale-102"
                         : "text-white font-bold hover:bg-white/10 hover:text-white"
@@ -2290,7 +2290,7 @@ export default function POSBilling() {
                   </button>
                   <button
                     onClick={() => selectTab("coupons")}
-                    className={`w-full flex items-center gap-4 px-4 py-3.5 [@media(max-height:780px)]:py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+                    className={`w-full flex items-center gap-4 px-4 py-3.5 [@media(max-height:820px)]:py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
                       activeTab === "coupons"
                         ? "bg-[#FFFFFF] text-[#C1272D] shadow-lg scale-102"
                         : "text-white font-bold hover:bg-white/10 hover:text-white"
@@ -2303,7 +2303,7 @@ export default function POSBilling() {
               )}
               <button
                 onClick={() => selectTab("loyalty")}
-                className={`w-full flex items-center gap-4 px-4 py-3.5 [@media(max-height:780px)]:py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+                className={`w-full flex items-center gap-4 px-4 py-3.5 [@media(max-height:820px)]:py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
                   activeTab === "loyalty"
                     ? "bg-[#FFFFFF] text-[#C1272D] shadow-lg scale-102"
                     : "text-white font-bold hover:bg-white/10 hover:text-white"
@@ -2315,7 +2315,7 @@ export default function POSBilling() {
               {role === 'admin' && (
                 <button
                   onClick={() => selectTab("settings")}
-                  className={`w-full flex items-center gap-4 px-4 py-3.5 [@media(max-height:780px)]:py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+                  className={`w-full flex items-center gap-4 px-4 py-3.5 [@media(max-height:820px)]:py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
                     activeTab === "settings"
                       ? "bg-[#FFFFFF] text-[#C1272D] shadow-lg scale-102"
                       : "text-white font-bold hover:bg-white/10 hover:text-white"
@@ -2326,10 +2326,10 @@ export default function POSBilling() {
                 </button>
               )}
 
-              <div className="pt-4 [@media(max-height:780px)]:pt-2 border-t border-white/10 mt-4 [@media(max-height:780px)]:mt-2">
+              <div className="pt-4 [@media(max-height:820px)]:pt-2 border-t border-white/10 mt-4 [@media(max-height:820px)]:mt-2">
                 <button
                   onClick={handleLogout}
-                  className="w-full flex items-center gap-4 px-4 py-3.5 [@media(max-height:780px)]:py-2 rounded-xl font-bold text-xs uppercase tracking-wider text-white bg-black/20 hover:bg-[#E03A3F]/10 transition-all cursor-pointer"
+                  className="w-full flex items-center gap-4 px-4 py-3.5 [@media(max-height:820px)]:py-2 rounded-xl font-bold text-xs uppercase tracking-wider text-white bg-black/20 hover:bg-[#E03A3F]/10 transition-all cursor-pointer"
                 >
                   <LogOut className="w-5 h-5" />
                   Log Out
@@ -2339,7 +2339,7 @@ export default function POSBilling() {
           </div>
 
           {/* Footer branding */}
-          <div className="p-4 shrink-0 border-t border-white/10 bg-[#0F0F0F] flex items-center justify-start gap-4">
+          <div className="p-4 [@media(max-height:820px)]:p-3 shrink-0 border-t border-white/10 bg-[#0F0F0F] flex items-center justify-start gap-4">
             <div className="w-8 h-8 rounded-full border border-white/20 flex items-center justify-center bg-[#C1272D] shrink-0">
               <span className="text-white font-bold text-sm">U</span>
             </div>
