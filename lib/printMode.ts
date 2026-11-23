@@ -44,10 +44,12 @@ export function printCss(p: PrintPrefs): string {
     const fs = p.size === "58" ? 10 : 12; // px
     return `
 @media print {
-  @page { size: ${mm}mm auto; margin: 2mm; }
-  body, body > div { background: #fff !important; padding: 0 !important; min-height: 0 !important; }
+  @page { size: ${mm}mm auto; margin: 0; }
+  html, body { width: ${mm}mm !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; }
+  body > div { background: #fff !important; padding: 0 !important; min-height: 0 !important; display: block !important; width: ${mm}mm !important; }
   #invoice-doc { display: none !important; }
-  #thermal-receipt { display: block !important; width: 100%; font-size: ${fs}px; line-height: 1.35; }
+  #thermal-receipt, #thermal-receipt * { box-sizing: border-box; }
+  #thermal-receipt { display: block !important; width: ${mm}mm !important; padding: 3mm 4mm !important; font-size: ${fs}px; line-height: 1.35; }
   #thermal-receipt p { margin: 0; word-break: break-word; }
   #thermal-receipt hr { border: 0; border-top: 1px dashed #000; margin: 6px 0; }
   #thermal-receipt .rc-name { font-size: ${fs + 6}px; font-weight: 800; text-transform: uppercase; }
