@@ -808,6 +808,7 @@ function PlansModal({ plans, categories, productNames, onClose, onChange }: { pl
             <div>
               <label className={labelCls}>Member discount (%)</label>
               <input className={field} type="number" min={0} max={100} step="0.01" value={f.discountPct} onChange={(e) => setF({ ...f, discountPct: e.target.value })} />
+              <p className="mt-1 text-[11.5px] text-slate-500">The standing discount every active member of this plan gets.</p>
             </div>
             <div>
               <label className={labelCls}>Birthday discount (%, optional)</label>
@@ -817,28 +818,33 @@ function PlansModal({ plans, categories, productNames, onClose, onChange }: { pl
               <label className={labelCls}>Discount applies on bills of at least (₹)</label>
               <input className={field} type="number" min={0} step="0.01" value={f.minBill} onChange={(e) => setF({ ...f, minBill: e.target.value })} />
             </div>
-            <div>
-              <label className={labelCls}>Extra offer valid until (optional)</label>
-              <input className={field} type="date" value={f.offerValidUntil} onChange={(e) => setF({ ...f, offerValidUntil: e.target.value })} />
-            </div>
-            <div>
-              <label className={labelCls}>Extra offer discount (%, optional)</label>
-              <input className={field} type="number" min={0} max={100} step="0.01" value={f.offerPct} onChange={(e) => setF({ ...f, offerPct: e.target.value })} />
-              <p className="mt-1 text-[11.5px] text-slate-500">Added to the member discount while the offer is valid, and shown as its own line on the bill.</p>
-            </div>
             <div className="sm:col-span-2 space-y-3 rounded-xl bg-[#F6F3E9] p-4">
               <p className="text-[11.5px] font-bold text-slate-700">Discount applies to (leave both empty = every item)</p>
               <ChipPicker label="Only these categories" options={categories} value={f.onlyCategories} onChange={(v) => setF({ ...f, onlyCategories: v })} />
               <ChipPicker label="Only these products" options={productNames} value={f.onlyProducts} onChange={(v) => setF({ ...f, onlyProducts: v })} />
             </div>
             <div className="sm:col-span-2">
-              <label className={labelCls}>Extra offer / benefit (optional)</label>
-              <input className={field} maxLength={120} placeholder="e.g. Free alteration, early access to sales" value={f.offerText} onChange={(e) => setF({ ...f, offerText: e.target.value })} />
-            </div>
-            <div className="sm:col-span-2">
               <label className={labelCls}>Benefits (short description)</label>
               <input className={field} maxLength={200} placeholder="e.g. Better discounts and early access to special offers" value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} />
             </div>
+            <fieldset className="sm:col-span-2 rounded-2xl border-2 border-dashed border-[#C1272D]/40 bg-[#FBEFEF]/50 p-4">
+              <legend className="rounded-full bg-[#C1272D] px-3 py-1 text-[10.5px] font-extrabold uppercase tracking-[0.14em] text-white">Extra offer · optional</legend>
+              <p className="mb-3 text-[12px] text-slate-600">A limited-time bonus on top of the member discount above. It is added to it while the offer is valid, and appears as its own “Additional member offer” line on the bill. Leave it empty or 0 for no extra offer.</p>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className={labelCls}>Extra offer discount (%)</label>
+                  <input className={field} type="number" min={0} max={100} step="0.01" value={f.offerPct} onChange={(e) => setF({ ...f, offerPct: e.target.value })} />
+                </div>
+                <div>
+                  <label className={labelCls}>Valid until</label>
+                  <input className={field} type="date" value={f.offerValidUntil} onChange={(e) => setF({ ...f, offerValidUntil: e.target.value })} />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className={labelCls}>Extra benefit text (shown on the bill)</label>
+                  <input className={field} maxLength={120} placeholder="e.g. Free alteration, early access to sales" value={f.offerText} onChange={(e) => setF({ ...f, offerText: e.target.value })} />
+                </div>
+              </div>
+            </fieldset>
           </div>
           <label className="flex cursor-pointer items-center gap-2 text-[13px] font-semibold text-slate-800">
             <input type="checkbox" checked={f.active} onChange={(e) => setF({ ...f, active: e.target.checked })} className="h-4 w-4 accent-[#C1272D]" /> Active (can be chosen for new members)
