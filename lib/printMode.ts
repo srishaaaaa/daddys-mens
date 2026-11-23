@@ -63,7 +63,9 @@ export function printCss(p: PrintPrefs): string {
   const page = p.size === "a5" ? "A5" : "A4";
   return `
 @media print {
-  @page { size: ${page}; margin: 10mm; }
+  @page { size: ${page}; margin: 0; }
+  html, body { background: #F7F7F7 !important; }
+  body > div { padding: ${p.size === "a5" ? "8mm" : "12mm"} !important; min-height: 0 !important; }
   #invoice-doc { max-width: 100% !important; }
 }`;
 }

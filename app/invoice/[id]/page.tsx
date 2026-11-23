@@ -102,10 +102,10 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
   const lab = "text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500";
 
   return (
-    <div className="min-h-screen bg-[#F7F7F7] text-black font-sans py-8 px-4 print:p-0 print:bg-white flex flex-col items-center">
+    <div className="min-h-screen bg-[#F7F7F7] text-black font-sans py-8 px-4 flex flex-col items-center">
       <style>{`
         @media print {
-          body { background-color: white !important; color: black !important; padding: 0 !important; margin: 0 !important; }
+          body { background-color: #F7F7F7 !important; color: black !important; margin: 0 !important; }
           * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }
       `}</style>
@@ -113,7 +113,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
       {/* Print handling only (no buttons for customers) */}
       <InvoiceActions />
 
-      <div id="invoice-doc" className="w-full max-w-[780px] bg-white border border-black/10 rounded-2xl shadow-sm print:shadow-none print:border-0 print:rounded-none p-8 sm:p-10 print:p-4">
+      <div id="invoice-doc" className="w-full max-w-[780px] bg-white border border-black/10 rounded-2xl shadow-sm p-8 sm:p-10 print:p-10">
         {/* Header */}
         <div className="flex flex-col-reverse sm:flex-row sm:items-start sm:justify-between print:flex-row print:items-start print:justify-between gap-4">
           <div className="min-w-0">

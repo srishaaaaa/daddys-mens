@@ -425,3 +425,9 @@ update orders o set
   gst_amount = i.snapshot_price * i.quantity
 from order_items i
 where i.order_id = o.id and i.snapshot_name like 'GST (%' and o.is_gst = false;
+
+-- ===== 0011_billing_defaults.sql =====
+-- Billing defaults: the bill type and GST settings every new bill starts with. Safe to re-run.
+alter table shop_settings add column if not exists default_gst           boolean not null default false;
+alter table shop_settings add column if not exists default_gst_rate      numeric not null default 5;
+alter table shop_settings add column if not exists default_gst_inclusive boolean not null default false;

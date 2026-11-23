@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, KeyRound, Loader2, QrCode, Save, Store } from "lucide-react";
+import { CheckCircle2, KeyRound, Receipt, Loader2, QrCode, Save, Store } from "lucide-react";
 import { UpiQrCard } from "@/app/_components/UpiQrCard";
 import { changePasscodeAction, getShopSettingsAction, saveShopSettingsAction } from "@/app/pos/settings-actions";
 import { unwrap } from "@/lib/actionResult";
@@ -13,8 +13,9 @@ const saveShopSettings = (...a: Parameters<typeof saveShopSettingsAction>) => un
 type Form = {
   shopName: string; tagline: string; phone: string; email: string; address: string;
   upiId: string; upiName: string; upiPhone: string; upiQrMinutes: string; publicUrl: string;
+  defaultGst: boolean; gstRate: string; gstInclusive: boolean;
 };
-const EMPTY: Form = { shopName: "", tagline: "", phone: "", email: "", address: "", upiId: "", upiName: "", upiPhone: "", upiQrMinutes: "5", publicUrl: "" };
+const EMPTY: Form = { shopName: "", tagline: "", phone: "", email: "", address: "", upiId: "", upiName: "", upiPhone: "", upiQrMinutes: "5", publicUrl: "", defaultGst: false, gstRate: "5", gstInclusive: false };
 
 const field =
   "h-12 w-full rounded-xl bg-[#F6F3E9] px-4 text-[14px] font-medium text-slate-900 outline-none ring-[#C1272D]/15 transition placeholder:text-slate-400 focus:bg-white focus:ring-4";
@@ -23,14 +24,20 @@ const cardCls = "rounded-3xl border border-black/10 bg-white p-5 shadow-sm sm:p-
 
 /* Shop settings: shop details shown to customers, the UPI details for the counter QR and WhatsApp payment
    link, the website address that links point at, and the admin / staff passcodes. */
-type SettingsData = { shopName: string; tagline: string; phone: string; email: string; address: string; upiId: string; upiName: string; upiPhone: string; upiQrMinutes: number; publicUrl: string };
+type SettingsData = { shopName: string; tagline: string; phone: string; email: string; address: string; upiId: string; upiName: string; upiPhone: string; upiQrMinutes: number; publicUrl: string; defaultGst: boolean; gstRate: number; gstInclusive: boolean };
 const toForm = (s: SettingsData): Form => ({
   shopName: s.shopName, tagline: s.tagline, phone: s.phone, email: s.email, address: s.address,
   upiId: s.upiId, upiName: s.upiName, upiPhone: s.upiPhone, upiQrMinutes: String(s.upiQrMinutes), publicUrl: s.publicUrl,
+  defaultGst: s.defaultGst, gstRate: String(s.gstRate), gstInclusive: s.gstInclusive,
 });
 
 // Kept while the app is open, so the tab shows straight away and refreshes quietly.
 let settingsCache: SettingsData | null = null;
+
+/** Gives the tab settings that were already loaded, so it opens instantly. */
+export function seedSettings(s: SettingsData) {
+  settingsCache = s;
+}
 
 /** Loads the settings ahead of time (after sign-in) so the tab opens instantly. */
 export async function prefetchSettings() {
@@ -73,8 +80,8 @@ export default function SettingsPanel() {
     setSaving(true);
     setError(null);
     try {
-      const s = await saveShopSettings({ ...f, upiQrMinutes: Number(f.upiQrMinutes) });
-      settingsCache = { shopName: s.shopName, tagline: s.tagline, phone: s.phone, email: s.email, address: s.address, upiId: s.upiId, upiName: s.upiName, upiPhone: s.upiPhone, upiQrMinutes: s.upiQrMinutes, publicUrl: s.publicUrl };
+      const s = await saveShopSettings({ ...f, upiQrMinutes: Number(f.upiQrMinutes), gstRate: Number(f.gstRate) });
+      settingsCache = { shopName: s.shopName, tagline: s.tagline, phone: s.phone, email: s.email, address: s.address, upiId: s.upiId, upiName: s.upiName, upiPhone: s.upiPhone, upiQrMinutes: s.upiQrMinutes, publicUrl: s.publicUrl, defaultGst: s.defaultGst, gstRate: s.gstRate, gstInclusive: s.gstInclusive };
       setF(toForm(s));
       setSaved(toForm(s));
       setJustSaved(true);
@@ -148,6 +155,41 @@ export default function SettingsPanel() {
                   {input("Email", <input className={field} type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />)}
                 </div>
                 {input("Address", <input className={field} value={f.address} maxLength={200} onChange={(e) => setF({ ...f, address: e.target.value })} />)}
+              </section>
+
+              <section className={`${cardCls} space-y-5`}>
+                <h3 className="flex items-center gap-2 text-[18px] font-bold text-slate-900">
+                  <Receipt className="h-5 w-5 text-[#C1272D]" /> Billing defaults
+                </h3>
+                <p className="-mt-3 text-[12px] text-slate-500">Every new bill starts with these. Staff can still change them on a single bill.</p>
+                <div>
+                  <span className={labelCls}>Bill type</span>
+                  <div className="flex rounded-full border border-black/10 bg-white p-1">
+                    {([[false, "Non-GST Bill"], [true, "GST Invoice"]] as const).map(([v, label]) => (
+                      <button key={label} type="button" onClick={() => setF({ ...f, defaultGst: v })}
+                        className={`flex-1 cursor-pointer rounded-full py-2.5 text-[11px] font-extrabold uppercase tracking-wider transition ${f.defaultGst === v ? (v ? "bg-[#C1272D] text-white shadow-sm" : "bg-[#111] text-white shadow-sm") : "text-black hover:bg-black/5"}`}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {f.defaultGst && (
+                  <div className="space-y-5">
+                    <div>
+                      <span className={labelCls}>GST is</span>
+                      <div className="flex rounded-xl border border-black/10 bg-white p-1">
+                        {([[false, "Exclusive (+GST)"], [true, "Inclusive (tax incl.)"]] as const).map(([v, label]) => (
+                          <button key={label} type="button" onClick={() => setF({ ...f, gstInclusive: v })}
+                            className={`flex-1 cursor-pointer rounded-lg py-2.5 text-[11px] font-extrabold uppercase tracking-wider transition ${f.gstInclusive === v ? "bg-[#111] text-white shadow-sm" : "text-black hover:bg-black/5"}`}>
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {input("GST rate (%)", <input className={`${field} max-w-[140px]`} type="number" min={0} max={100} step="0.01" value={f.gstRate} onChange={(e) => setF({ ...f, gstRate: e.target.value })} />,
+                      "Split equally into CGST and SGST on the bill.")}
+                  </div>
+                )}
               </section>
 
               <PasscodeCard />

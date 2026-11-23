@@ -51,7 +51,7 @@ import LoyaltyPanel, { prefetchLoyalty } from "./LoyaltyPanel";
 import { prefetchInventory } from "./InventoryPanel";
 import { prefetchCoupons } from "./CouponsPanel";
 import { prefetchExpenses } from "./ExpensesPanel";
-import { prefetchSettings } from "./SettingsPanel";
+import { seedSettings } from "./SettingsPanel";
 import ExpensesPanel from "./ExpensesPanel";
 import { listExpensesAction } from "@/app/pos/expense-actions";
 import SettingsPanel from "./SettingsPanel";
@@ -63,6 +63,7 @@ import type { GiftOffer, LoyaltyLookup } from "@/lib/loyalty/types";
 import { suggestCustomersAction } from "@/app/pos/loyalty-actions";
 import { UpiQrCard } from "@/app/_components/UpiQrCard";
 import { createPayLinkAction, getUpiConfigAction } from "@/app/pos/pay-actions";
+import { bootstrapAction } from "@/app/pos/bootstrap-action";
 import { getShopProfileAction } from "@/app/pos/settings-actions";
 import { listCouponsAction, redeemCouponAction, validateCouponAction } from "@/app/pos/coupon-actions";
 import type { Coupon as DbCoupon } from "@/lib/couponTypes";
@@ -365,6 +366,55 @@ const SearchableItemInput = ({
   );
 };
 
+function OrderBody({ o }: { o: CompletedOrder }) {
+  const isGst = o.isGst !== undefined ? o.isGst : o.items.some((i) => i.name.startsWith("GST ("));
+  const lines = o.items.filter((i) => !i.name.startsWith("GST ("));
+  const gstLine = o.items.find((i) => i.name.startsWith("GST ("));
+  const gstAmt = gstLine ? gstLine.price * gstLine.qty : 0;
+  const money = (n: number) => `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+  const lab = "text-[10px] font-extrabold uppercase tracking-[0.14em] text-slate-500";
+  return (
+              <div className="px-8 py-6">
+                <div className="grid grid-cols-2 gap-x-8 gap-y-6">
+                  <div><p className={lab}>Customer name</p><p className="mt-1 text-[15px] text-black">{o.customerName || "Guest"}</p></div>
+                  <div><p className={lab}>Contact number</p><p className="mt-1 text-[15px] text-black">{o.customerPhone || "N/A"}</p></div>
+                  <div><p className={lab}>Address</p><p className="mt-1 text-[15px] text-black">N/A</p></div>
+                  <div><p className={lab}>Order source</p><p className="mt-1 text-[15px] text-black">{o.source}</p></div>
+                  <div>
+                    <p className={lab}>Bill type</p>
+                    <span className="mt-1.5 inline-block rounded bg-slate-100 px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wide text-slate-800">{isGst ? "GST bill" : "Non-GST bill"}</span>
+                  </div>
+                  <div><p className={lab}>Date &amp; time</p><p className="mt-1 text-[15px] text-black">{new Date(o.date).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" })}</p></div>
+                  <div><p className={lab}>Payment</p><p className="mt-1 text-[15px] text-black">{o.paymentMethod === "GPAY" ? "UPI" : o.paymentMethod === "SPLIT" ? [o.splitCash ? `Cash ${money(o.splitCash)}` : "", o.splitUpi ? `UPI ${money(o.splitUpi)}` : "", o.splitCard ? `Card ${money(o.splitCard)}` : ""].filter(Boolean).join(" + ") || "Split" : o.paymentMethod === "CARD" ? "Card" : "Cash"}</p></div>
+                </div>
+
+                <p className={`${lab} mt-8 border-b border-black/10 pb-2`}>Order items</p>
+                <div className="divide-y divide-black/5">
+                  {lines.map((i) => (
+                    <div key={i.id} className="flex items-start justify-between gap-4 py-3">
+                      <p className="text-[15px] font-bold text-black">{i.name}</p>
+                      <div className="text-right">
+                        <p className="text-[15px] font-bold text-black">{money(i.price * i.qty)}</p>
+                        <p className="text-[10px] text-slate-600">{i.qty} x {money(i.price)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-3 space-y-2 border-t border-black/10 pt-4 text-[15px]">
+                  <div className="flex justify-between"><span className="text-slate-700">Subtotal</span><b className="text-black">{money(o.subtotal)}</b></div>
+                  {o.discount > 0 && <div className="flex justify-between"><span className="text-slate-700">Discount{o.discountType === "PERCENT" && o.discountValue ? ` (${o.discountValue}%)` : ""}</span><b className="text-black">-{money(o.discount)}</b></div>}
+                  {o.deliveryFee > 0 && <div className="flex justify-between"><span className="text-slate-700">Delivery</span><b className="text-black">{money(o.deliveryFee)}</b></div>}
+                  {gstLine && <div className="flex justify-between"><span className="text-slate-700">{gstLine.name}</span><b className="text-black">{money(gstAmt)}</b></div>}
+                  <div className="flex items-baseline justify-between pt-2">
+                    <span className="text-[20px] font-black text-black">TOTAL</span>
+                    <span className="text-[24px] font-black text-[#C1272D]">{money(o.grandTotal)}</span>
+                  </div>
+                </div>
+              </div>
+  );
+}
+
 export default function POSBilling() {
   const [isMounted, setIsMounted] = useState(false);
   const [isAuthorized, setIsAuthorized] = useState<boolean>(() => {
@@ -467,6 +517,9 @@ export default function POSBilling() {
   const [applyGST, setApplyGST] = useState<boolean>(false);
   const [gstPercentage, setGstPercentage] = useState<number>(5);
   const [gstInclusive, setGstInclusive] = useState<boolean>(false);
+  // Settings → Billing defaults: what each new bill starts with.
+  const billingDefaults = useRef({ gst: false, rate: 5, inclusive: false });
+  const defaultsApplied = useRef(false);
 
   // The item list is remembered on this device, so the picker has items the moment the page opens.
   const [catalog, setCatalog] = useState<CatalogItem[]>(() => {
@@ -483,6 +536,8 @@ export default function POSBilling() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [editingCatalogId, setEditingCatalogId] = useState<string | null>(null);
   const [activeInvoiceId, setActiveInvoiceId] = useState<string | null>(null);
+  const [invoiceLoaded, setInvoiceLoaded] = useState(false);
+  useEffect(() => { setInvoiceLoaded(false); }, [activeInvoiceId]);
   const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
 
   // Analytics filter/navigation states
@@ -639,9 +694,8 @@ export default function POSBilling() {
   const fetchData = async () => {
     setIsRefreshing(true);
     try {
-      const ordersPromise = listOrdersAction();
-      ordersPromise.catch(() => {}); // handled where it is awaited below
-      const productsData = await listProductsAction();
+      const boot = await bootstrapAction();
+      const productsData = boot.products;
       const freshCatalog = productsData.map((p) => ({
         id: p.id,
         name: p.name,
@@ -656,22 +710,30 @@ export default function POSBilling() {
         /* storage full or blocked: the list just loads fresh next time */
       }
 
-      getUpiConfigAction().then(setUpiCfg).catch(() => {});
+      if (boot.upi) setUpiCfg(boot.upi);
+      if (boot.settings) seedSettings(boot.settings);
       // Warm the other tabs in the background so they open instantly (these quietly do nothing for staff).
       void prefetchLoyalty();
       void prefetchInventory();
       void prefetchCoupons();
       void prefetchExpenses();
-      void prefetchSettings();
-      getShopProfileAction().then((p) => setShopProfile({ shopName: p.shopName, phone: p.phone })).catch(() => {});
-      listBillOffersAction().then(setBillOffers).catch(() => {});
-      listExpensesAction()
-        .then((rows) => setExpenseRows(rows.map((e) => ({ amount: e.amount, date: e.expense_date }))))
-        .catch(() => {});
+      const p = boot.profile;
+      if (p) {
+        setShopProfile({ shopName: p.shopName, phone: p.phone });
+        billingDefaults.current = { gst: p.defaultGst, rate: p.gstRate, inclusive: p.gstInclusive };
+        if (!defaultsApplied.current) {
+          defaultsApplied.current = true; // only the first time, so a bill in progress is never changed
+          setApplyGST(p.defaultGst);
+          setGstPercentage(p.gstRate);
+          setGstInclusive(p.gstInclusive);
+        }
+      }
+      if (boot.offers) setBillOffers(boot.offers);
+      if (boot.expenses) setExpenseRows(boot.expenses.map((e) => ({ amount: e.amount, date: e.expense_date })));
       // Coupons are admin-managed; staff just won't get the list (billing validates server-side).
-      listCouponsAction().then(setDbCoupons).catch(() => {});
+      if (boot.coupons) setDbCoupons(boot.coupons);
 
-      const ordersData = await ordersPromise;
+      const ordersData = boot.orders;
       applyOrders(ordersData);
       try {
         localStorage.setItem("pos_orders_cache", JSON.stringify(ordersData));
@@ -1214,8 +1276,8 @@ export default function POSBilling() {
     setDeliveryFee(0);
     setCashReceived(0);
     setPaymentMethod("CASH");
-    setApplyGST(false);
-    setGstPercentage(5);
+    setApplyGST(billingDefaults.current.gst);
+    setGstPercentage(billingDefaults.current.rate);
     setSelectedCoupon("none");
     setCouponInput("");
     setCouponMsg(null);
@@ -1228,7 +1290,7 @@ export default function POSBilling() {
     setSplitUpi("");
     setSplitCard("");
     setAddedOffers([]);
-    setGstInclusive(false);
+    setGstInclusive(billingDefaults.current.inclusive);
 
     return snapshot;
   };
@@ -1771,8 +1833,8 @@ export default function POSBilling() {
           
           {/* Left Side Branding */}
           <div className="w-full lg:w-1/2 flex flex-col items-center lg:items-start text-center lg:text-left">
-            <div className="w-24 h-24 bg-white/5 backdrop-blur-xl rounded-3xl p-4 border border-white/10 shadow-2xl mb-8 group hover:scale-105 transition-transform duration-500">
-              <img src="/logo.png" alt="Logo" className="w-full h-full object-contain drop-shadow-lg group-hover:rotate-12 transition-transform duration-500" />
+            <div className="w-24 h-24 bg-white/5 backdrop-blur-xl rounded-3xl overflow-hidden border border-white/10 shadow-2xl mb-8 group hover:scale-105 transition-transform duration-500">
+              <img src="/logo.png" alt="Logo" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
             </div>
             <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/5 border border-white/10 rounded-full mb-6 backdrop-blur-md">
               <span className="w-2 h-2 rounded-full bg-[#C1272D] animate-pulse" />
@@ -4938,12 +5000,12 @@ export default function POSBilling() {
                 </div>
 
                 {/* Actions */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 gap-3">
                   <button
                     onClick={() => setPrintSettingsFor(saleCompletedPrompt.orderId)}
-                    className="flex items-center justify-center gap-2 rounded-xl border border-black/15 bg-white px-3 py-4 text-[12px] font-extrabold uppercase tracking-wide text-black hover:bg-slate-50 cursor-pointer"
+                    className="flex items-center justify-center gap-2 rounded-xl border border-black/15 bg-white h-12 whitespace-nowrap px-3 text-[12px] font-extrabold uppercase tracking-wide text-black hover:bg-slate-50 cursor-pointer"
                   >
-                    <Printer className="w-4 h-4 text-[#C1272D]" /> Print Receipt
+                    <Printer className="w-4 h-4 shrink-0 text-[#C1272D]" /> Print Receipt
                   </button>
                   <button
                     onClick={() => {
@@ -4951,9 +5013,9 @@ export default function POSBilling() {
                       close();
                       setActiveInvoiceId(orderId);
                     }}
-                    className="flex items-center justify-center gap-2 rounded-xl border border-black/15 bg-white px-3 py-4 text-[12px] font-extrabold uppercase tracking-wide text-black hover:bg-slate-50 cursor-pointer"
+                    className="flex items-center justify-center gap-2 rounded-xl border border-black/15 bg-white h-12 whitespace-nowrap px-3 text-[12px] font-extrabold uppercase tracking-wide text-black hover:bg-slate-50 cursor-pointer"
                   >
-                    <Eye className="w-4 h-4 text-[#C1272D]" /> View
+                    <Eye className="w-4 h-4 shrink-0 text-[#C1272D]" /> View
                   </button>
                   <button
                     onClick={() => {
@@ -4964,15 +5026,15 @@ export default function POSBilling() {
                         setShowPromptPhoneInput(true);
                       }
                     }}
-                    className="flex items-center justify-center gap-2 rounded-xl bg-[#10B981] px-3 py-4 text-[12px] font-extrabold uppercase leading-tight tracking-wide text-white hover:bg-[#059669] cursor-pointer"
+                    className="flex items-center justify-center gap-2 rounded-xl bg-[#10B981] h-12 whitespace-nowrap px-3 text-[12px] font-extrabold uppercase tracking-wide text-white hover:bg-[#059669] cursor-pointer"
                   >
                     <MessageCircle className="w-4 h-4 shrink-0" /> WhatsApp Invoice
                   </button>
                   <button
                     onClick={close}
-                    className="flex items-center justify-center gap-2 rounded-xl bg-black px-3 py-4 text-[12px] font-extrabold uppercase tracking-wide text-white hover:bg-slate-800 cursor-pointer"
+                    className="flex items-center justify-center gap-2 rounded-xl bg-black h-12 whitespace-nowrap px-3 text-[12px] font-extrabold uppercase tracking-wide text-white hover:bg-slate-800 cursor-pointer"
                   >
-                    <Plus className="w-4 h-4" /> New Sale
+                    <Plus className="w-4 h-4 shrink-0" /> New Sale
                   </button>
                 </div>
 
@@ -5045,11 +5107,6 @@ export default function POSBilling() {
       {detailOrderId && (() => {
         const o = orders.find((x) => x.id === detailOrderId);
         if (!o) return null;
-        const lines = o.items.filter((i) => !i.name.startsWith("GST ("));
-        const gstLine = o.items.find((i) => i.name.startsWith("GST ("));
-        const gstAmt = gstLine ? gstLine.price * gstLine.qty : 0;
-        const money = (n: number) => `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
-        const lab = "text-[10px] font-extrabold uppercase tracking-[0.14em] text-slate-500";
         return (
           <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/55 p-4" onClick={() => setDetailOrderId(null)}>
             <div className="w-full max-w-[680px] max-h-[92vh] overflow-y-auto rounded-3xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -5062,44 +5119,7 @@ export default function POSBilling() {
                   <X className="h-5 w-5" />
                 </button>
               </div>
-              <div className="px-8 py-6">
-                <div className="grid grid-cols-2 gap-x-8 gap-y-6">
-                  <div><p className={lab}>Customer name</p><p className="mt-1 text-[15px] text-black">{o.customerName || "Guest"}</p></div>
-                  <div><p className={lab}>Contact number</p><p className="mt-1 text-[15px] text-black">{o.customerPhone || "N/A"}</p></div>
-                  <div><p className={lab}>Address</p><p className="mt-1 text-[15px] text-black">N/A</p></div>
-                  <div><p className={lab}>Order source</p><p className="mt-1 text-[15px] text-black">{o.source}</p></div>
-                  <div>
-                    <p className={lab}>Bill type</p>
-                    <span className="mt-1.5 inline-block rounded bg-slate-100 px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wide text-slate-800">{isGstOrder(o) ? "GST bill" : "Non-GST bill"}</span>
-                  </div>
-                  <div><p className={lab}>Date &amp; time</p><p className="mt-1 text-[15px] text-black">{new Date(o.date).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" })}</p></div>
-                  <div><p className={lab}>Payment</p><p className="mt-1 text-[15px] text-black">{o.paymentMethod === "GPAY" ? "UPI" : o.paymentMethod === "SPLIT" ? [o.splitCash ? `Cash ${money(o.splitCash)}` : "", o.splitUpi ? `UPI ${money(o.splitUpi)}` : "", o.splitCard ? `Card ${money(o.splitCard)}` : ""].filter(Boolean).join(" + ") || "Split" : o.paymentMethod === "CARD" ? "Card" : "Cash"}</p></div>
-                </div>
-
-                <p className={`${lab} mt-8 border-b border-black/10 pb-2`}>Order items</p>
-                <div className="divide-y divide-black/5">
-                  {lines.map((i) => (
-                    <div key={i.id} className="flex items-start justify-between gap-4 py-3">
-                      <p className="text-[15px] font-bold text-black">{i.name}</p>
-                      <div className="text-right">
-                        <p className="text-[15px] font-bold text-black">{money(i.price * i.qty)}</p>
-                        <p className="text-[10px] text-slate-600">{i.qty} x {money(i.price)}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="mt-3 space-y-2 border-t border-black/10 pt-4 text-[15px]">
-                  <div className="flex justify-between"><span className="text-slate-700">Subtotal</span><b className="text-black">{money(o.subtotal)}</b></div>
-                  {o.discount > 0 && <div className="flex justify-between"><span className="text-slate-700">Discount{o.discountType === "PERCENT" && o.discountValue ? ` (${o.discountValue}%)` : ""}</span><b className="text-black">-{money(o.discount)}</b></div>}
-                  {o.deliveryFee > 0 && <div className="flex justify-between"><span className="text-slate-700">Delivery</span><b className="text-black">{money(o.deliveryFee)}</b></div>}
-                  {gstLine && <div className="flex justify-between"><span className="text-slate-700">{gstLine.name}</span><b className="text-black">{money(gstAmt)}</b></div>}
-                  <div className="flex items-baseline justify-between pt-2">
-                    <span className="text-[20px] font-black text-black">TOTAL</span>
-                    <span className="text-[24px] font-black text-[#C1272D]">{money(o.grandTotal)}</span>
-                  </div>
-                </div>
-              </div>
+              <OrderBody o={o} />
             </div>
           </div>
         );
@@ -5158,9 +5178,19 @@ export default function POSBilling() {
               </div>
             </div>
             <div className="flex-1 w-full bg-[#F5EFE6] overflow-hidden relative">
+              {!invoiceLoaded && (() => {
+                const o = orders.find((x) => x.id === activeInvoiceId);
+                return o ? (
+                  <div className="absolute inset-0 overflow-y-auto bg-white">
+                    <div className="mx-auto max-w-[680px]"><OrderBody o={o} /></div>
+                  </div>
+                ) : null;
+              })()}
               <iframe
+                key={activeInvoiceId}
                 src={`/invoice/${activeInvoiceId}`}
-                className="w-full h-full border-none absolute inset-0"
+                onLoad={() => setInvoiceLoaded(true)}
+                className={`w-full h-full border-none absolute inset-0 transition-opacity duration-150 ${invoiceLoaded ? "opacity-100" : "opacity-0"}`}
                 title={`Invoice ${activeInvoiceId}`}
               />
             </div>

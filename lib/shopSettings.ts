@@ -14,6 +14,10 @@ export type ShopSettings = {
   phone: string;
   email: string;
   address: string;
+  /** Bill type and GST settings every new bill starts with */
+  defaultGst: boolean;
+  gstRate: number;
+  gstInclusive: boolean;
 };
 
 /** What the app used before these were editable, so nothing changes until the owner edits them. */
@@ -25,7 +29,7 @@ export const DEFAULT_PROFILE = {
   address: "East 2nd Street, Near Bombay Bhavan, 1st Floor, Pudukkottai - 622001.",
 };
 
-const EMPTY: ShopSettings = { upiId: "", upiName: "", upiPhone: "", upiQrMinutes: 5, publicUrl: "", ...DEFAULT_PROFILE };
+const EMPTY: ShopSettings = { upiId: "", upiName: "", upiPhone: "", upiQrMinutes: 5, publicUrl: "", defaultGst: false, gstRate: 5, gstInclusive: false, ...DEFAULT_PROFILE };
 
 /** Reads the saved settings; if the table or the newer columns aren't there yet, falls back so nothing else breaks. */
 export async function getShopSettings(): Promise<ShopSettings> {
@@ -42,13 +46,16 @@ export async function getShopSettings(): Promise<ShopSettings> {
     phone: (data.shop_phone ?? "").trim() || DEFAULT_PROFILE.phone,
     email: data.shop_email ?? DEFAULT_PROFILE.email,
     address: data.shop_address ?? DEFAULT_PROFILE.address,
+    defaultGst: !!data.default_gst,
+    gstRate: Number.isFinite(Number(data.default_gst_rate)) ? Number(data.default_gst_rate) : 5,
+    gstInclusive: !!data.default_gst_inclusive,
   };
 }
 
 /** The shop's public details (name, phone, address…), for pages and messages. */
 export async function getShopProfile() {
   const s = await getShopSettings();
-  return { shopName: s.shopName, tagline: s.tagline, phone: s.phone, email: s.email, address: s.address, publicUrl: s.publicUrl };
+  return { shopName: s.shopName, tagline: s.tagline, phone: s.phone, email: s.email, address: s.address, publicUrl: s.publicUrl, defaultGst: s.defaultGst, gstRate: s.gstRate, gstInclusive: s.gstInclusive };
 }
 export type ShopProfile = Awaited<ReturnType<typeof getShopProfile>>;
 
@@ -69,6 +76,8 @@ export function cleanSettings(raw: Partial<ShopSettings>): ShopSettings {
     }
   }
   const minutes = Math.round(Number(raw.upiQrMinutes));
+  const rate = Number(raw.gstRate);
+  if (!Number.isFinite(rate) || rate < 0 || rate > 100) throw new Error("The GST rate must be between 0 and 100.");
 
   const shopName = String(raw.shopName ?? "").trim().slice(0, 40);
   if (!shopName) throw new Error("Enter the shop name.");
@@ -88,6 +97,9 @@ export function cleanSettings(raw: Partial<ShopSettings>): ShopSettings {
     phone: shopPhone,
     email,
     address: String(raw.address ?? "").trim().slice(0, 200),
+    defaultGst: !!raw.defaultGst,
+    gstRate: Math.round(rate * 100) / 100,
+    gstInclusive: !!raw.gstInclusive,
   };
 }
 
@@ -97,12 +109,13 @@ export async function saveShopSettings(raw: Partial<ShopSettings>): Promise<Shop
     id: "default", upi_id: s.upiId, upi_name: s.upiName, upi_phone: s.upiPhone,
     upi_qr_minutes: s.upiQrMinutes, public_url: s.publicUrl,
     shop_name: s.shopName, shop_tagline: s.tagline, shop_phone: s.phone, shop_email: s.email, shop_address: s.address,
+    default_gst: s.defaultGst, default_gst_rate: s.gstRate, default_gst_inclusive: s.gstInclusive,
     updated_at: new Date().toISOString(),
   });
   if (error) {
     throw new Error(
-      /shop_settings|shop_name|shop_tagline|shop_phone|shop_email|shop_address/.test(error.message)
-        ? "Run migrations 0007 and 0009 (supabase/all_migrations.sql) in Supabase first."
+      /shop_settings|shop_name|shop_tagline|shop_phone|shop_email|shop_address|default_gst/.test(error.message)
+        ? "Run migrations 0007, 0009 and 0011 (supabase/all_migrations.sql) in Supabase first."
         : error.message,
     );
   }
