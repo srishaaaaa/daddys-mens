@@ -40,6 +40,8 @@ import {
   MessageCircle,
   Star,
   Check,
+  PiggyBank,
+  TrendingDown,
   Settings as SettingsIcon,
 } from "lucide-react";
 import InstallAppButton from "@/app/install-app-button";
@@ -114,8 +116,31 @@ type CompletedOrder = {
   grandTotal: number;
   cashReceived: number;
   paymentMethod?: "CASH" | "CARD" | "GPAY" | "SPLIT";
+  splitCash?: number;
+  splitUpi?: number;
+  splitCard?: number;
   date: string;
   status: "Completed" | "Pending";
+};
+
+/* A stat card for the analytics screens. */
+const AnalyticsCard = ({
+  label, value, sub, icon, tone = "slate", valueClass = "", subContent,
+}: {
+  label: string; value: React.ReactNode; sub?: string; icon: React.ReactNode;
+  tone?: "slate" | "green" | "teal" | "pink" | "violet"; valueClass?: string; subContent?: React.ReactNode;
+}) => {
+  const chip = { slate: "bg-slate-100 text-slate-600", green: "bg-emerald-100 text-emerald-700", teal: "bg-cyan-100 text-cyan-700", pink: "bg-[#C1272D]/10 text-[#C1272D]", violet: "bg-violet-100 text-violet-700" }[tone];
+  return (
+    <div className="bg-white border border-black/10 rounded-2xl p-5 shadow-sm transition-shadow hover:shadow-md min-w-0">
+      <div className="flex justify-between items-start gap-2">
+        <span className="text-[11px] font-extrabold uppercase tracking-wide text-[#000000]">{label}</span>
+        <span className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${chip}`}>{icon}</span>
+      </div>
+      <div className={`mt-5 mb-1.5 text-[26px] leading-none font-black tracking-tight text-[#000000] truncate ${valueClass}`}>{value}</div>
+      {subContent ?? <div className="text-[10.5px] font-semibold text-[#000000]/70 truncate">{sub}</div>}
+    </div>
+  );
 };
 
 const SearchableItemInput = ({
@@ -443,6 +468,8 @@ export default function POSBilling() {
   // Analytics filter/navigation states
   // Expense amounts and dates, for Net Profit on the dashboard (admin only; empty for staff).
   const [expenseRows, setExpenseRows] = useState<{ amount: number; date: string }[]>([]);
+  // All bills / GST invoices only / Non-GST bills only (narrows every analytics number).
+  const [billTypeFilter, setBillTypeFilter] = useState<"all" | "gst" | "nongst">("all");
   const [analyticsPeriod, setAnalyticsPeriod] = useState<
     "all" | "today" | "week" | "month" | "year" | "custom"
   >("all");
@@ -579,6 +606,9 @@ export default function POSBilling() {
             grandTotal: o.grand_total,
             cashReceived: o.cash_received,
             paymentMethod: method,
+            splitCash: o.split_cash ?? 0,
+            splitUpi: o.split_upi ?? 0,
+            splitCard: o.split_card ?? 0,
             date: o.created_at,
             status: (o.status === "COMPLETED" ? "Completed" : "Pending") as
               | "Completed"
@@ -1339,7 +1369,9 @@ export default function POSBilling() {
   // Real-time analytics derived from orders with period filtering
   const now = new Date();
 
+  const isGstOrder = (o: CompletedOrder) => o.items.some((i) => i.name.startsWith("GST ("));
   const analyticsFilteredOrders = orders.filter((o) => {
+    if (billTypeFilter !== "all" && (billTypeFilter === "gst") !== isGstOrder(o)) return false;
     if (
       analyticsSearchPhone &&
       !o.customerPhone.includes(analyticsSearchPhone)
@@ -1438,6 +1470,26 @@ export default function POSBilling() {
   const offlineRevenue = analyticsFilteredOrders
     .filter((o) => o.source === "OFFLINE")
     .reduce((acc, o) => acc + o.grandTotal, 0);
+
+  // GST invoices vs non-GST bills
+  const gstOrdersList = analyticsFilteredOrders.filter(isGstOrder);
+  const gstSalesAmount = gstOrdersList.reduce((acc, o) => acc + o.grandTotal, 0);
+  const nonGstOrdersList = analyticsFilteredOrders.filter((o) => !isGstOrder(o));
+  const nonGstSalesAmount = nonGstOrdersList.reduce((acc, o) => acc + o.grandTotal, 0);
+
+  // Money received by way of payment. A split bill's parts are counted in the Cash / GPay / Card boxes;
+  // the Split box shows how much of the sales came from split bills.
+  const payOf = (o: CompletedOrder) => o.paymentMethod ?? "CASH";
+  const splitOrdersList = analyticsFilteredOrders.filter((o) => payOf(o) === "SPLIT");
+  const sumSplit = (k: "splitCash" | "splitUpi" | "splitCard") => splitOrdersList.reduce((a, o) => a + (o[k] ?? 0), 0);
+  const cashOrdersList = analyticsFilteredOrders.filter((o) => payOf(o) === "CASH");
+  const gpayOrdersList = analyticsFilteredOrders.filter((o) => payOf(o) === "GPAY");
+  const cardOrdersList = analyticsFilteredOrders.filter((o) => payOf(o) === "CARD");
+  const cashReceivedTotal = cashOrdersList.reduce((a, o) => a + o.grandTotal, 0) + sumSplit("splitCash");
+  const gpayReceivedTotal = gpayOrdersList.reduce((a, o) => a + o.grandTotal, 0) + sumSplit("splitUpi");
+  const cardReceivedTotal = cardOrdersList.reduce((a, o) => a + o.grandTotal, 0) + sumSplit("splitCard");
+  const splitReceivedTotal = splitOrdersList.reduce((a, o) => a + o.grandTotal, 0);
+  const inr2 = (n: number) => n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   // Top items by revenue in analyticsFilteredOrders
   const itemSales: Record<
@@ -3543,11 +3595,22 @@ export default function POSBilling() {
             <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
               <div>
                 <h2 className="text-[28px] font-black text-[#000000] tracking-tight">
-                  POS Analytics
+                  Revenue Analytics
                 </h2>
                 <p className="text-xs text-[#000000] font-semibold mt-1">
-                  Real-time store & channel insights
+                  {billTypeFilter === "gst" ? "GST invoices only" : billTypeFilter === "nongst" ? "Non-GST bills only" : "All bills"} — full store & channel insights
                 </p>
+                <div className="mt-4 inline-flex flex-wrap items-center bg-white border border-black/10 rounded-2xl p-1 gap-1">
+                  {([["all", "All Bills"], ["gst", "GST Invoices"], ["nongst", "Non-GST Bills"]] as const).map(([key, label]) => (
+                    <button
+                      key={key}
+                      onClick={() => setBillTypeFilter(key)}
+                      className={`px-4 py-2 rounded-xl text-[10px] font-extrabold uppercase tracking-wider transition-all cursor-pointer ${billTypeFilter === key ? "bg-[#C1272D] text-white shadow-sm" : "text-[#000000] hover:bg-black/5"}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Period Filters & Refresh Button */}
@@ -3931,202 +3994,82 @@ export default function POSBilling() {
 
             {analyticsSubTab === "revenue" && (
               <>
-                {/* Top 5x2 KPI Grid */}
+                {/* Net earnings, GST / non-GST sales, expenses */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-                  {/* Row 1 */}
-                  <div className="bg-white border border-black/10 rounded-xl p-4 shadow-sm hover:shadow-md transition-all">
-                    <div className="flex justify-between items-start mb-3">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#000000]">
-                        Total Revenue
-                      </span>
-                      <div className="w-6 h-6 rounded-full bg-[#1A1A1A]/10 flex items-center justify-center">
-                        <IndianRupee className="w-3 h-3 text-[#1A1A1A] animate-pulse" />
-                      </div>
+                  <div className="rounded-2xl p-5 text-white shadow-sm bg-gradient-to-br from-[#0E9F6E] to-[#1A1A1A]">
+                    <div className="flex justify-between items-start">
+                      <span className="text-[11px] font-extrabold uppercase tracking-wide text-white/90">Net Earnings</span>
+                      <span className="w-8 h-8 rounded-full bg-white/15 flex items-center justify-center"><PiggyBank className="w-4 h-4" /></span>
                     </div>
-                    <div className="text-xl font-black text-[#000000] mb-1">
-                      ₹{totalRevenueAmount.toLocaleString()}
+                    <div className="mt-5 text-[28px] leading-none font-black tracking-tight truncate">
+                      {netProfitAmount < 0 ? "− " : ""}₹{inr2(Math.abs(netProfitAmount))}
                     </div>
-                    <div className="text-[9px] text-[#000000] font-semibold">
-                      POS + manual combined
-                    </div>
+                    <div className="mt-2 text-[10px] font-extrabold uppercase tracking-wide text-white/85">GST + Non-GST − Expenses</div>
                   </div>
-
-                  <div className="bg-white border border-black/10 rounded-xl p-4 shadow-sm hover:shadow-md transition-all">
-                    <div className="flex justify-between items-start mb-3">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#000000]">
-                        Completed Bills
-                      </span>
-                      <div className="w-6 h-6 rounded-full bg-[#1A1A1A]/10 flex items-center justify-center">
-                        <Trophy className="w-3 h-3 text-[#1A1A1A] animate-swing" />
-                      </div>
+                  <div className="bg-white border border-[#C1272D]/30 rounded-2xl p-5 shadow-sm">
+                    <div className="flex justify-between items-start">
+                      <span className="text-[11px] font-extrabold uppercase tracking-wide text-[#000000]">GST Sales</span>
+                      <span className="w-8 h-8 rounded-full bg-[#C1272D]/10 text-[#C1272D] flex items-center justify-center"><IndianRupee className="w-4 h-4" /></span>
                     </div>
-                    <div className="text-xl font-black text-[#000000] mb-1">
-                      {totalOrdersCount}
-                    </div>
-                    <div className="text-[9px] text-[#000000] font-semibold">
-                      POS + manual bills
-                    </div>
+                    <div className="mt-5 text-[28px] leading-none font-black tracking-tight text-[#C1272D] truncate">₹{inr2(gstSalesAmount)}</div>
+                    <div className="mt-2 text-[10.5px] font-semibold text-[#000000]/70">{gstOrdersList.length} GST invoice{gstOrdersList.length === 1 ? "" : "s"}</div>
                   </div>
-
-                  <div className="bg-white border border-black/10 rounded-xl p-4 shadow-sm hover:shadow-md transition-all">
-                    <div className="flex justify-between items-start mb-3">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#000000]">
-                        Total Expenses
-                      </span>
-                      <div className="w-6 h-6 rounded-full bg-[#B91C1C]/10 flex items-center justify-center">
-                        <IndianRupee className="w-3 h-3 text-[#B91C1C]" />
-                      </div>
+                  <div className="bg-white border border-emerald-200 rounded-2xl p-5 shadow-sm">
+                    <div className="flex justify-between items-start">
+                      <span className="text-[11px] font-extrabold uppercase tracking-wide text-[#000000]">Non-GST Sales</span>
+                      <span className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center"><TrendingUp className="w-4 h-4" /></span>
                     </div>
-                    <div className="text-xl font-black text-[#B91C1C] mb-1">
-                      ₹{analyticsExpensesTotal.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
-                    </div>
-                    <div className="text-[9px] text-[#000000] font-semibold">
-                      From the Expense Tracker
-                    </div>
+                    <div className="mt-5 text-[28px] leading-none font-black tracking-tight text-emerald-600 truncate">+ ₹{inr2(nonGstSalesAmount)}</div>
+                    <div className="mt-2 text-[10.5px] font-semibold text-[#000000]/70">{nonGstOrdersList.length} retail bill{nonGstOrdersList.length === 1 ? "" : "s"}</div>
                   </div>
-
-                  <div className="bg-white border border-black/10 rounded-xl p-4 shadow-sm hover:shadow-md transition-all">
-                    <div className="flex justify-between items-start mb-3">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#000000]">
-                        Net Profit
-                      </span>
-                      <div className="w-6 h-6 rounded-full bg-[#15803D]/10 flex items-center justify-center">
-                        <TrendingUp className="w-3 h-3 text-[#15803D]" />
-                      </div>
+                  <div className="bg-white border border-[#C1272D]/30 rounded-2xl p-5 shadow-sm">
+                    <div className="flex justify-between items-start">
+                      <span className="text-[11px] font-extrabold uppercase tracking-wide text-[#000000]">Total Expenses</span>
+                      <span className="w-8 h-8 rounded-full bg-[#C1272D]/10 text-[#C1272D] flex items-center justify-center"><TrendingDown className="w-4 h-4" /></span>
                     </div>
-                    <div className={`text-xl font-black mb-1 ${netProfitAmount < 0 ? "text-[#B91C1C]" : "text-[#15803D]"}`}>
-                      {netProfitAmount < 0 ? "−" : ""}₹{Math.abs(netProfitAmount).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
-                    </div>
-                    <div className="text-[9px] text-[#000000] font-semibold">
-                      Revenue minus expenses
-                    </div>
-                  </div>
-
-                  <div className="bg-white border border-black/10 rounded-xl p-4 shadow-sm hover:shadow-md transition-all">
-                    <div className="flex justify-between items-start mb-3">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#000000]">
-                        Offline Bills
-                      </span>
-                      <div className="w-6 h-6 rounded-full bg-[#9E1B20]/10 flex items-center justify-center">
-                        <IndianRupee className="w-3 h-3 text-[#9E1B20] animate-bounce" />
-                      </div>
-                    </div>
-                    <div className="text-xl font-black text-[#000000] mb-1">
-                      ₹{offlineRevenue.toLocaleString()}
-                    </div>
-                    <div className="text-[9px] text-[#000000] font-semibold">
-                      Walk-in POS sales
-                    </div>
-                  </div>
-
-                  <div className="bg-white border border-black/10 rounded-xl p-4 shadow-sm hover:shadow-md transition-all">
-                    <div className="flex justify-between items-start mb-3">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#000000]">
-                        Online Bills
-                      </span>
-                      <div className="w-6 h-6 rounded-full bg-[#1A1A1A]/10 flex items-center justify-center">
-                        <IndianRupee className="w-3 h-3 text-[#1A1A1A] animate-float" />
-                      </div>
-                    </div>
-                    <div className="text-xl font-black text-[#000000] mb-1">
-                      ₹{onlineRevenue.toLocaleString()}
-                    </div>
-                    <div className="text-[9px] text-[#000000] font-semibold">
-                      Online POS sales
-                    </div>
+                    <div className="mt-5 text-[28px] leading-none font-black tracking-tight text-[#B91C1C] truncate">− ₹{inr2(analyticsExpensesTotal)}</div>
+                    <button onClick={() => selectTab("expenses")} className="mt-2 text-[10.5px] font-bold text-[#B91C1C] underline cursor-pointer">
+                      Money out — Expense Tracker
+                    </button>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
-                  {/* Row 2 */}
-                  <div className="bg-white border border-black/10 rounded-xl p-4 shadow-sm hover:shadow-md transition-all">
-                    <div className="flex justify-between items-start mb-3">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#000000]">
-                        Total Offline Bills
-                      </span>
-                      <div className="w-6 h-6 rounded-full bg-[#C1272D]/10 flex items-center justify-center">
-                        <ShoppingBag className="w-3 h-3 text-[#C1272D] animate-pulse" />
-                      </div>
-                    </div>
-                    <div className="text-xl font-black text-[#000000] mb-1">
-                      {offlineOrders}
-                    </div>
-                    <div className="text-[9px] text-[#000000] font-semibold">
-                      Walk-in POS orders
-                    </div>
+                {/* Calculation formula */}
+                <div className="flex flex-wrap items-center justify-between gap-3 bg-white border border-black/10 rounded-2xl px-4 py-3 mb-4 text-[12.5px] text-[#4A4038]">
+                  <div className="flex flex-wrap items-center gap-3 min-w-0">
+                    <span className="rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide text-indigo-700">Calculation Formula</span>
+                    <span>GST (₹{inr2(gstSalesAmount)}) + Non-GST (₹{inr2(nonGstSalesAmount)}) − Expenses (₹{inr2(analyticsExpensesTotal)})</span>
                   </div>
-
-                  <div className="bg-white border border-black/10 rounded-xl p-4 shadow-sm hover:shadow-md transition-all">
-                    <div className="flex justify-between items-start mb-3">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#000000]">
-                        Total Online Bills
-                      </span>
-                      <div className="w-6 h-6 rounded-full bg-[#1A1A1A]/10 flex items-center justify-center">
-                        <Globe className="w-3 h-3 text-[#1A1A1A] animate-float" />
-                      </div>
-                    </div>
-                    <div className="text-xl font-black text-[#000000] mb-1">
-                      {onlineOrders}
-                    </div>
-                    <div className="text-[9px] text-[#000000] font-semibold">
-                      Online channel orders
-                    </div>
-                  </div>
-
-                  <div className="bg-white border border-black/10 rounded-xl p-4 shadow-sm hover:shadow-md transition-all">
-                    <div className="flex justify-between items-start mb-3">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#000000]">
-                        Total Items Sold
-                      </span>
-                      <div className="w-6 h-6 rounded-full bg-[#C1272D]/10 flex items-center justify-center">
-                        <Package className="w-3 h-3 text-[#C1272D] animate-pop" />
-                      </div>
-                    </div>
-                    <div className="text-xl font-black text-[#000000] mb-1">
-                      {totalItemsSold}
-                    </div>
-                    <div className="text-[9px] text-[#000000] font-semibold">
-                      From completed bills
-                    </div>
-                  </div>
-
-                  <div className="bg-white border border-black/10 rounded-xl p-4 shadow-sm hover:shadow-md transition-all">
-                    <div className="flex justify-between items-start mb-3">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#000000]">
-                        Avg Order Value
-                      </span>
-                      <div className="w-6 h-6 rounded-full bg-[#9E1B20]/10 flex items-center justify-center">
-                        <Zap className="w-3 h-3 text-[#9E1B20] animate-pulse" />
-                      </div>
-                    </div>
-                    <div className="text-xl font-black text-[#000000] mb-1">
-                      ₹{Math.round(avgOrderValue).toLocaleString()}
-                    </div>
-                    <div className="text-[9px] text-[#000000] font-semibold">
-                      Per completed order
-                    </div>
-                  </div>
-
-                  <div className="bg-white border border-black/10 rounded-xl p-4 shadow-sm hover:shadow-md transition-all">
-                    <div className="flex justify-between items-start mb-3">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#000000]">
-                        Top Product
-                      </span>
-                      <div className="w-6 h-6 rounded-full bg-[#C1272D]/10 flex items-center justify-center">
-                        <Trophy className="w-3 h-3 text-[#C1272D] animate-pop" />
-                      </div>
-                    </div>
-                    <div
-                      className="text-xl font-black text-[#000000] mb-1 truncate"
-                      title={topProduct}
-                    >
-                      {topProduct}
-                    </div>
-                    <div className="text-[9px] text-[#000000] font-semibold">
-                      Most sold item
-                    </div>
-                  </div>
+                  <span className="font-semibold">
+                    = Net Profit: <b className={`font-mono text-[14px] ${netProfitAmount < 0 ? "text-[#B91C1C]" : "text-emerald-600"}`}>{netProfitAmount < 0 ? "−" : ""}₹{inr2(Math.abs(netProfitAmount))}</b>
+                  </span>
                 </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                  <AnalyticsCard label="Total Revenue" tone="green" icon={<IndianRupee className="w-4 h-4" />}
+                    value={`₹${inr2(totalRevenueAmount)}`} sub={`GST (₹${Math.round(gstSalesAmount).toLocaleString("en-IN")}) + Non-GST (₹${Math.round(nonGstSalesAmount).toLocaleString("en-IN")})`} />
+                  <AnalyticsCard label="Completed Bills" tone="green" icon={<Trophy className="w-4 h-4" />} value={totalOrdersCount} sub="POS + manual bills" />
+                  <AnalyticsCard label="Offline Bills" tone="teal" icon={<IndianRupee className="w-4 h-4" />} value={`₹${inr2(offlineRevenue)}`} sub="Walk-in POS sales" />
+                  <AnalyticsCard label="Online Bills" tone="slate" icon={<IndianRupee className="w-4 h-4" />} value={`₹${inr2(onlineRevenue)}`} sub="Online POS sales" />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                  <AnalyticsCard label="Total Offline Bills" icon={<ShoppingBag className="w-4 h-4" />} value={offlineOrders} sub="Walk-in POS orders" />
+                  <AnalyticsCard label="Total Online Bills" icon={<Globe className="w-4 h-4" />} value={onlineOrders} sub="Online channel orders" />
+                  <AnalyticsCard label="Total Items Sold" icon={<Package className="w-4 h-4" />} value={totalItemsSold} sub="From completed bills" />
+                  <AnalyticsCard label="Top Product" tone="pink" icon={<Trophy className="w-4 h-4" />} value={<span title={topProduct}>{topProduct}</span>} sub="Most sold item" />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-2">
+                  <AnalyticsCard label="Cash Received" tone="green" icon={<IndianRupee className="w-4 h-4" />} value={`₹${inr2(cashReceivedTotal)}`} sub={`${cashOrdersList.length + splitOrdersList.filter((o) => (o.splitCash ?? 0) > 0).length} bills`} />
+                  <AnalyticsCard label="GPay / UPI Received" icon={<IndianRupee className="w-4 h-4" />} value={`₹${inr2(gpayReceivedTotal)}`} sub={`${gpayOrdersList.length + splitOrdersList.filter((o) => (o.splitUpi ?? 0) > 0).length} bills`} />
+                  <AnalyticsCard label="Split Received" tone="pink" icon={<IndianRupee className="w-4 h-4" />} value={`₹${inr2(splitReceivedTotal)}`}
+                    sub={`${splitOrdersList.length} bill${splitOrdersList.length === 1 ? "" : "s"} - Cash ₹${inr2(sumSplit("splitCash"))} + UPI ₹${inr2(sumSplit("splitUpi"))}${sumSplit("splitCard") > 0 ? ` + Card ₹${inr2(sumSplit("splitCard"))}` : ""}`} />
+                  <AnalyticsCard label="Card Received" tone="violet" icon={<IndianRupee className="w-4 h-4" />} value={`₹${inr2(cardReceivedTotal)}`} sub={`${cardOrdersList.length + splitOrdersList.filter((o) => (o.splitCard ?? 0) > 0).length} bills`} />
+                </div>
+                <p className="mb-8 text-[11.5px] text-[#4A4038]">
+                  Split bills are already included in the Cash, GPay / UPI and Card boxes (the Split box shows how much of them came from split payments).
+                </p>
 
                 {/* Main Charts & Breakdowns */}
                 <div className="flex flex-col lg:grid lg:grid-cols-12 gap-6">

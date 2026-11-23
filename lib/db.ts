@@ -155,7 +155,21 @@ export async function getOrders(): Promise<StoredOrder[]> {
     console.error("Error fetching orders from DB:", error);
     return [];
   }
-  return (data ?? []).map(mapOrder);
+  const orders = (data ?? []).map(mapOrder);
+  // Split amounts need migration 0008; without it the list still loads.
+  const { data: sp } = await sb.from("orders").select("id, split_cash, split_upi, split_card");
+  if (sp) {
+    const byId = new Map((sp as any[]).map((r) => [r.id, r]));
+    for (const o of orders) {
+      const r = byId.get(o.id);
+      if (r) {
+        o.split_cash = num(r.split_cash);
+        o.split_upi = num(r.split_upi);
+        o.split_card = num(r.split_card);
+      }
+    }
+  }
+  return orders;
 }
 
 export async function getOrder(id: string): Promise<StoredOrder | null> {
