@@ -483,6 +483,7 @@ export default function POSBilling() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [editingCatalogId, setEditingCatalogId] = useState<string | null>(null);
   const [activeInvoiceId, setActiveInvoiceId] = useState<string | null>(null);
+  const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
 
   // Analytics filter/navigation states
   // Expense amounts and dates, for Net Profit on the dashboard (admin only; empty for staff).
@@ -576,42 +577,11 @@ export default function POSBilling() {
     }
   };
 
-  const fetchData = async () => {
-    setIsRefreshing(true);
-    try {
-      const productsData = await listProductsAction();
-      const freshCatalog = productsData.map((p) => ({
-        id: p.id,
-        name: p.name,
-        desc: p.description,
-        imageUrl: p.image_url ?? null,
-        price: p.default_price || undefined,
-      }));
-      setCatalog(freshCatalog);
-      try {
-        localStorage.setItem("pos_catalog_cache", JSON.stringify(freshCatalog));
-      } catch {
-        /* storage full or blocked: the list just loads fresh next time */
-      }
-
-      getUpiConfigAction().then(setUpiCfg).catch(() => {});
-      // Warm the other tabs in the background so they open instantly (these quietly do nothing for staff).
-      void prefetchLoyalty();
-      void prefetchInventory();
-      void prefetchCoupons();
-      void prefetchExpenses();
-      void prefetchSettings();
-      getShopProfileAction().then((p) => setShopProfile({ shopName: p.shopName, phone: p.phone })).catch(() => {});
-      listBillOffersAction().then(setBillOffers).catch(() => {});
-      listExpensesAction()
-        .then((rows) => setExpenseRows(rows.map((e) => ({ amount: e.amount, date: e.expense_date }))))
-        .catch(() => {});
-      // Coupons are admin-managed; staff just won't get the list (billing validates server-side).
-      listCouponsAction().then(setDbCoupons).catch(() => {});
-
-      const ordersData = await listOrdersAction();
-      setOrders(
-        ordersData.map((o) => {
+  // Turns the server's order rows into the list shown in Order History (also used for the saved copy).
+  const [ordersReady, setOrdersReady] = useState(false);
+  const applyOrders = (ordersData: Awaited<ReturnType<typeof listOrdersAction>>) => {
+    setOrders(
+      ordersData.map((o) => {
           let phone = o.customer_phone || "";
           let method: "CASH" | "CARD" | "GPAY" | "SPLIT" = "CASH";
           if (phone.includes("_")) {
@@ -652,7 +622,62 @@ export default function POSBilling() {
               | "Pending",
           };
         }),
-      );
+    );
+    setOrdersReady(true);
+  };
+  // Show the last-known orders at once; the fresh list replaces them a moment later.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("pos_orders_cache");
+      if (raw) applyOrders(JSON.parse(raw));
+    } catch {
+      /* no saved copy */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const fetchData = async () => {
+    setIsRefreshing(true);
+    try {
+      const ordersPromise = listOrdersAction();
+      ordersPromise.catch(() => {}); // handled where it is awaited below
+      const productsData = await listProductsAction();
+      const freshCatalog = productsData.map((p) => ({
+        id: p.id,
+        name: p.name,
+        desc: p.description,
+        imageUrl: p.image_url ?? null,
+        price: p.default_price || undefined,
+      }));
+      setCatalog(freshCatalog);
+      try {
+        localStorage.setItem("pos_catalog_cache", JSON.stringify(freshCatalog));
+      } catch {
+        /* storage full or blocked: the list just loads fresh next time */
+      }
+
+      getUpiConfigAction().then(setUpiCfg).catch(() => {});
+      // Warm the other tabs in the background so they open instantly (these quietly do nothing for staff).
+      void prefetchLoyalty();
+      void prefetchInventory();
+      void prefetchCoupons();
+      void prefetchExpenses();
+      void prefetchSettings();
+      getShopProfileAction().then((p) => setShopProfile({ shopName: p.shopName, phone: p.phone })).catch(() => {});
+      listBillOffersAction().then(setBillOffers).catch(() => {});
+      listExpensesAction()
+        .then((rows) => setExpenseRows(rows.map((e) => ({ amount: e.amount, date: e.expense_date }))))
+        .catch(() => {});
+      // Coupons are admin-managed; staff just won't get the list (billing validates server-side).
+      listCouponsAction().then(setDbCoupons).catch(() => {});
+
+      const ordersData = await ordersPromise;
+      applyOrders(ordersData);
+      try {
+        localStorage.setItem("pos_orders_cache", JSON.stringify(ordersData));
+      } catch {
+        /* storage full or blocked: orders just load fresh next time */
+      }
     } catch (err) {
       console.error("Error refreshing data:", err);
     } finally {
@@ -3462,7 +3487,7 @@ export default function POSBilling() {
             {orders.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-black/10 rounded-xl bg-[#FFFFFF] py-12">
                 <p className="text-[#000000] font-medium">
-                  No past transactions yet.
+                  {ordersReady ? "No past transactions yet." : "\u00a0"}
                 </p>
               </div>
             ) : (
@@ -3580,11 +3605,16 @@ export default function POSBilling() {
                                 {order.customerPhone || "-"}
                               </td>
                               <td className="p-4">
-                                <span
-                                  className={`px-2 py-0.5 rounded text-[9px] font-bold tracking-widest border ${order.source === "ONLINE" ? "border-[#1A1A1A] text-[#1A1A1A] bg-[#1A1A1A]/10" : "border-[#C1272D] text-[#C1272D] bg-[#C1272D]/10"}`}
-                                >
-                                  {order.source}
-                                </span>
+                                <div className="flex flex-col items-start gap-1">
+                                  <span
+                                    className={`px-2 py-0.5 rounded text-[9px] font-bold tracking-widest border ${order.source === "ONLINE" ? "border-[#1A1A1A] text-[#1A1A1A] bg-[#1A1A1A]/10" : "border-[#C1272D] text-[#C1272D] bg-[#C1272D]/10"}`}
+                                  >
+                                    {order.source}
+                                  </span>
+                                  <span className={`px-2 py-0.5 rounded text-[9px] font-bold tracking-widest border ${isGstOrder(order) ? "border-emerald-600 text-emerald-700 bg-emerald-50" : "border-black/15 text-slate-600 bg-slate-100"}`}>
+                                    {isGstOrder(order) ? "GST" : "NON-GST"}
+                                  </span>
+                                </div>
                               </td>
                               <td className="p-4 text-sm font-black text-[#C1272D]">
                                 ₹{order.grandTotal.toLocaleString()}
@@ -3594,6 +3624,14 @@ export default function POSBilling() {
                                   <span className="px-3 py-1 rounded bg-[#10B981]/10 text-[#10B981] text-[10px] font-bold uppercase tracking-wider hidden sm:inline-block">
                                     {order.status}
                                   </span>
+                                  <button
+                                    onClick={() => setDetailOrderId(order.id)}
+                                    title="Order details"
+                                    aria-label="Order details"
+                                    className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer"
+                                  >
+                                    <Eye className="w-4 h-4" />
+                                  </button>
                                   <button
                                     onClick={() => resendWhatsApp(order)}
                                     className="flex items-center gap-1.5 px-3 py-1.5 bg-[#10B981] hover:bg-[#059669] text-white rounded-md text-[9px] font-bold uppercase tracking-wider transition-colors whitespace-nowrap shrink-0"
@@ -3924,11 +3962,16 @@ export default function POSBilling() {
                                     {order.customerPhone || "-"}
                                   </td>
                                   <td className="p-3">
-                                    <span
-                                      className={`px-2 py-0.5 rounded text-[9px] font-bold tracking-widest border ${order.source === "ONLINE" ? "border-[#1A1A1A] text-[#1A1A1A] bg-[#1A1A1A]/10" : "border-[#C1272D] text-[#C1272D] bg-[#C1272D]/10"}`}
-                                    >
-                                      {order.source}
-                                    </span>
+                                    <div className="flex flex-col items-start gap-1">
+                                      <span
+                                        className={`px-2 py-0.5 rounded text-[9px] font-bold tracking-widest border ${order.source === "ONLINE" ? "border-[#1A1A1A] text-[#1A1A1A] bg-[#1A1A1A]/10" : "border-[#C1272D] text-[#C1272D] bg-[#C1272D]/10"}`}
+                                      >
+                                        {order.source}
+                                      </span>
+                                      <span className={`px-2 py-0.5 rounded text-[9px] font-bold tracking-widest border ${isGstOrder(order) ? "border-emerald-600 text-emerald-700 bg-emerald-50" : "border-black/15 text-slate-600 bg-slate-100"}`}>
+                                        {isGstOrder(order) ? "GST" : "NON-GST"}
+                                      </span>
+                                    </div>
                                   </td>
                                   <td className="p-3 text-xs font-semibold text-[#000000] text-right">
                                     {order.items.reduce(
@@ -4999,6 +5042,69 @@ export default function POSBilling() {
       )}
 
       {/* Invoice Modal */}
+      {detailOrderId && (() => {
+        const o = orders.find((x) => x.id === detailOrderId);
+        if (!o) return null;
+        const lines = o.items.filter((i) => !i.name.startsWith("GST ("));
+        const gstLine = o.items.find((i) => i.name.startsWith("GST ("));
+        const gstAmt = gstLine ? gstLine.price * gstLine.qty : 0;
+        const money = (n: number) => `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+        const lab = "text-[10px] font-extrabold uppercase tracking-[0.14em] text-slate-500";
+        return (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/55 p-4" onClick={() => setDetailOrderId(null)}>
+            <div className="w-full max-w-[680px] max-h-[92vh] overflow-y-auto rounded-3xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-start justify-between border-b border-black/10 px-8 py-6">
+                <div>
+                  <h3 className="text-[22px] font-black text-black">Order Details</h3>
+                  <p className="mt-0.5 text-[14px] font-medium text-slate-700">{o.id}</p>
+                </div>
+                <button onClick={() => setDetailOrderId(null)} aria-label="Close" className="text-slate-700 hover:text-black cursor-pointer">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="px-8 py-6">
+                <div className="grid grid-cols-2 gap-x-8 gap-y-6">
+                  <div><p className={lab}>Customer name</p><p className="mt-1 text-[15px] text-black">{o.customerName || "Guest"}</p></div>
+                  <div><p className={lab}>Contact number</p><p className="mt-1 text-[15px] text-black">{o.customerPhone || "N/A"}</p></div>
+                  <div><p className={lab}>Address</p><p className="mt-1 text-[15px] text-black">N/A</p></div>
+                  <div><p className={lab}>Order source</p><p className="mt-1 text-[15px] text-black">{o.source}</p></div>
+                  <div>
+                    <p className={lab}>Bill type</p>
+                    <span className="mt-1.5 inline-block rounded bg-slate-100 px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wide text-slate-800">{isGstOrder(o) ? "GST bill" : "Non-GST bill"}</span>
+                  </div>
+                  <div><p className={lab}>Date &amp; time</p><p className="mt-1 text-[15px] text-black">{new Date(o.date).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" })}</p></div>
+                  <div><p className={lab}>Payment</p><p className="mt-1 text-[15px] text-black">{o.paymentMethod === "GPAY" ? "UPI" : o.paymentMethod === "SPLIT" ? [o.splitCash ? `Cash ${money(o.splitCash)}` : "", o.splitUpi ? `UPI ${money(o.splitUpi)}` : "", o.splitCard ? `Card ${money(o.splitCard)}` : ""].filter(Boolean).join(" + ") || "Split" : o.paymentMethod === "CARD" ? "Card" : "Cash"}</p></div>
+                </div>
+
+                <p className={`${lab} mt-8 border-b border-black/10 pb-2`}>Order items</p>
+                <div className="divide-y divide-black/5">
+                  {lines.map((i) => (
+                    <div key={i.id} className="flex items-start justify-between gap-4 py-3">
+                      <p className="text-[15px] font-bold text-black">{i.name}</p>
+                      <div className="text-right">
+                        <p className="text-[15px] font-bold text-black">{money(i.price * i.qty)}</p>
+                        <p className="text-[10px] text-slate-600">{i.qty} x {money(i.price)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-3 space-y-2 border-t border-black/10 pt-4 text-[15px]">
+                  <div className="flex justify-between"><span className="text-slate-700">Subtotal</span><b className="text-black">{money(o.subtotal)}</b></div>
+                  {o.discount > 0 && <div className="flex justify-between"><span className="text-slate-700">Discount{o.discountType === "PERCENT" && o.discountValue ? ` (${o.discountValue}%)` : ""}</span><b className="text-black">-{money(o.discount)}</b></div>}
+                  {o.deliveryFee > 0 && <div className="flex justify-between"><span className="text-slate-700">Delivery</span><b className="text-black">{money(o.deliveryFee)}</b></div>}
+                  {gstLine && <div className="flex justify-between"><span className="text-slate-700">{gstLine.name}</span><b className="text-black">{money(gstAmt)}</b></div>}
+                  <div className="flex items-baseline justify-between pt-2">
+                    <span className="text-[20px] font-black text-black">TOTAL</span>
+                    <span className="text-[24px] font-black text-[#C1272D]">{money(o.grandTotal)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {activeInvoiceId && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200">
           <div className="bg-[#F5EFE6] rounded-2xl shadow-2xl w-full max-w-4xl h-[90vh] sm:h-[85vh] flex flex-col overflow-hidden transform scale-100 animate-in zoom-in-95 duration-200">

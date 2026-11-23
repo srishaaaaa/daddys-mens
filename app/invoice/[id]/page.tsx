@@ -57,14 +57,16 @@ function rupeesInWords(amount: number): string {
 
 export default async function InvoicePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const order = await getOrder(id);
+  const [order, shop, loyalty, cfg] = await Promise.all([
+    getOrder(id),
+    getShopProfile(),
+    orderLoyalty(id).catch(() => null),
+    getConfig().catch(() => null),
+  ]);
   if (!order) notFound();
 
-  const shop = await getShopProfile();
-
   // Loyalty summary: only for bills with a loyalty customer, and only when the setting is on.
-  const loyalty = await orderLoyalty(id).catch(() => null);
-  const showLoyalty = loyalty ? (await getConfig().catch(() => null))?.display.receiptSummary : false;
+  const showLoyalty = loyalty ? cfg?.display.receiptSummary : false;
 
   const [rawPhone, rawMethod] = (order.customer_phone || "").split("_");
   const phone = (rawPhone || "").replace(/\D/g, "").slice(-10);

@@ -152,17 +152,18 @@ const mapOrder = (o: any): StoredOrder => ({
 });
 
 export async function getOrders(): Promise<StoredOrder[]> {
-  const { data, error } = await sb
-    .from("orders")
-    .select(ORDER_SELECT)
-    .order("created_at", { ascending: false });
+  const [{ data, error }, { data: sp }, { data: gs }] = await Promise.all([
+    sb.from("orders").select(ORDER_SELECT).order("created_at", { ascending: false }),
+    // Split amounts need migration 0008; without it the list still loads.
+    sb.from("orders").select("id, split_cash, split_upi, split_card"),
+    // GST flag (migration 0010); without it analytics falls back to looking for the GST line.
+    sb.from("orders").select("id, is_gst, gst_inclusive, gst_percent, gst_amount"),
+  ]);
   if (error) {
     console.error("Error fetching orders from DB:", error);
     return [];
   }
   const orders = (data ?? []).map(mapOrder);
-  // Split amounts need migration 0008; without it the list still loads.
-  const { data: sp } = await sb.from("orders").select("id, split_cash, split_upi, split_card");
   if (sp) {
     const byId = new Map((sp as any[]).map((r) => [r.id, r]));
     for (const o of orders) {
@@ -174,8 +175,6 @@ export async function getOrders(): Promise<StoredOrder[]> {
       }
     }
   }
-  // GST flag (migration 0010); without it analytics falls back to looking for the GST line.
-  const { data: gs } = await sb.from("orders").select("id, is_gst, gst_inclusive, gst_percent, gst_amount");
   if (gs) {
     const byId = new Map((gs as any[]).map((r) => [r.id, r]));
     for (const o of orders) {
@@ -192,21 +191,19 @@ export async function getOrders(): Promise<StoredOrder[]> {
 }
 
 export async function getOrder(id: string): Promise<StoredOrder | null> {
-  const { data, error } = await sb
-    .from("orders")
-    .select(ORDER_SELECT)
-    .eq("id", id)
-    .maybeSingle();
+  const [{ data, error }, { data: ch }, { data: sp }] = await Promise.all([
+    sb.from("orders").select(ORDER_SELECT).eq("id", id).maybeSingle(),
+    // Read separately so the invoice still works before migration 0004 is applied.
+    sb.from("orders").select("upi_channel").eq("id", id).maybeSingle(),
+    sb.from("orders").select("split_cash, split_upi, split_card").eq("id", id).maybeSingle(),
+  ]);
   if (error) {
     console.error(`Error fetching order ${id} from DB:`, error);
     return null;
   }
   if (!data) return null;
   const order = mapOrder(data);
-  // Read separately so the invoice still works before migration 0004 is applied.
-  const { data: ch } = await sb.from("orders").select("upi_channel").eq("id", id).maybeSingle();
   order.upi_channel = (ch as { upi_channel?: string | null } | null)?.upi_channel ?? null;
-  const { data: sp } = await sb.from("orders").select("split_cash, split_upi, split_card").eq("id", id).maybeSingle();
   if (sp) {
     order.split_cash = num(sp.split_cash);
     order.split_upi = num(sp.split_upi);
