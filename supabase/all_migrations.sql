@@ -431,3 +431,18 @@ where i.order_id = o.id and i.snapshot_name like 'GST (%' and o.is_gst = false;
 alter table shop_settings add column if not exists default_gst           boolean not null default false;
 alter table shop_settings add column if not exists default_gst_rate      numeric not null default 5;
 alter table shop_settings add column if not exists default_gst_inclusive boolean not null default false;
+
+-- ===== 0012_memberships.sql =====
+-- Membership: a simple, free membership list (separate from loyalty). Safe to re-run.
+create sequence if not exists membership_seq start 1;
+create table if not exists memberships (
+  id         text primary key default gen_random_uuid()::text,
+  member_no  text not null unique default ('DH-' || lpad(nextval('membership_seq')::text, 5, '0')),
+  name       text not null,
+  phone      text not null,
+  status     text not null default 'active' check (status in ('active', 'inactive')),
+  joined_at  timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+create unique index if not exists idx_memberships_phone on memberships (phone);
+alter table memberships enable row level security;

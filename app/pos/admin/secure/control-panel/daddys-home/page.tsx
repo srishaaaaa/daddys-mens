@@ -43,11 +43,13 @@ import {
   PiggyBank,
   TrendingDown,
   Settings as SettingsIcon,
+  IdCard,
 } from "lucide-react";
 import InstallAppButton from "@/app/install-app-button";
 import InventoryPanel from "./InventoryPanel";
 import CouponsPanel from "./CouponsPanel";
 import LoyaltyPanel, { prefetchLoyalty } from "./LoyaltyPanel";
+import MembershipPanel, { seedMemberships } from "./MembershipPanel";
 import { prefetchInventory } from "./InventoryPanel";
 import { prefetchCoupons } from "./CouponsPanel";
 import { prefetchExpenses } from "./ExpensesPanel";
@@ -441,7 +443,7 @@ export default function POSBilling() {
 
   const [activeCategory, setActiveCategory] = useState<string>("ALL");
   const [activeTab, setActiveTab] = useState<
-    "billing" | "orders" | "analytics" | "inventory" | "coupons" | "loyalty" | "expenses" | "settings"
+    "billing" | "orders" | "analytics" | "inventory" | "coupons" | "loyalty" | "membership" | "expenses" | "settings"
   >("billing");
   const [isOnline, setIsOnline] = useState(false);
   const [customerName, setCustomerName] = useState("");
@@ -622,7 +624,7 @@ export default function POSBilling() {
     setIsAuthorized(false);
   };
 
-  const selectTab = (tab: "billing" | "orders" | "analytics" | "inventory" | "coupons" | "loyalty" | "expenses" | "settings") => {
+  const selectTab = (tab: "billing" | "orders" | "analytics" | "inventory" | "coupons" | "loyalty" | "membership" | "expenses" | "settings") => {
     setActiveTab(tab);
     // On mobile/tablet the sidebar is an overlay — close it after navigating.
     if (typeof window !== "undefined" && window.innerWidth < 1024) {
@@ -711,6 +713,7 @@ export default function POSBilling() {
       if (boot.upi) setUpiCfg(boot.upi);
       if (boot.settings) seedSettings(boot.settings);
       if (boot.members) setMemberPhones(boot.members);
+      if (boot.memberships) seedMemberships(boot.memberships);
       // Warm the other tabs in the background so they open instantly (these quietly do nothing for staff).
       void prefetchLoyalty();
       void prefetchInventory();
@@ -2336,6 +2339,17 @@ export default function POSBilling() {
                 <Star className="w-5 h-5" />
                 Loyalty
               </button>
+              <button
+                onClick={() => selectTab("membership")}
+                className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+                  activeTab === "membership"
+                    ? "bg-[#FFFFFF] text-[#C1272D] shadow-lg scale-102"
+                    : "text-white font-bold hover:bg-white/10 hover:text-white"
+                }`}
+              >
+                <IdCard className="w-5 h-5" />
+                Membership
+              </button>
               {role === 'admin' && (
                 <button
                   onClick={() => selectTab("settings")}
@@ -3481,6 +3495,7 @@ export default function POSBilling() {
         {role === "admin" && activeTab === "expenses" && <ExpensesPanel />}
         {role === "admin" && activeTab === "settings" && <SettingsPanel />}
         {activeTab === "loyalty" && <LoyaltyPanel admin={role === "admin"} />}
+        {activeTab === "membership" && <MembershipPanel shop={shopProfile.shopName} />}
 
         {role === "admin" && activeTab === "orders" && (
           <div className="flex-1 flex flex-col max-w-[1400px] mx-auto w-full pb-8 pr-2 animate-in fade-in duration-300">
