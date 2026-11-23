@@ -42,6 +42,9 @@ export type StoredOrder = {
   gst_inclusive?: boolean;
   gst_percent?: number;
   gst_amount?: number;
+  /** Membership discount applied on this bill (needs migration 0013). */
+  member_no?: string | null;
+  member_plan?: string | null;
   order_items: StoredOrderItem[];
 };
 
@@ -152,12 +155,14 @@ const mapOrder = (o: any): StoredOrder => ({
 });
 
 export async function getOrders(): Promise<StoredOrder[]> {
-  const [{ data, error }, { data: sp }, { data: gs }] = await Promise.all([
+  const [{ data, error }, { data: sp }, { data: gs }, { data: mb }] = await Promise.all([
     sb.from("orders").select(ORDER_SELECT).order("created_at", { ascending: false }),
     // Split amounts need migration 0008; without it the list still loads.
     sb.from("orders").select("id, split_cash, split_upi, split_card"),
     // GST flag (migration 0010); without it analytics falls back to looking for the GST line.
     sb.from("orders").select("id, is_gst, gst_inclusive, gst_percent, gst_amount"),
+    // Which bills had a member discount (migration 0013).
+    sb.from("orders").select("id, member_no, member_plan").not("member_no", "is", null),
   ]);
   if (error) {
     console.error("Error fetching orders from DB:", error);
@@ -187,15 +192,26 @@ export async function getOrders(): Promise<StoredOrder[]> {
       }
     }
   }
+  if (mb) {
+    const byId = new Map((mb as any[]).map((r) => [r.id, r]));
+    for (const o of orders) {
+      const r = byId.get(o.id);
+      if (r) {
+        o.member_no = r.member_no;
+        o.member_plan = r.member_plan;
+      }
+    }
+  }
   return orders;
 }
 
 export async function getOrder(id: string): Promise<StoredOrder | null> {
-  const [{ data, error }, { data: ch }, { data: sp }] = await Promise.all([
+  const [{ data, error }, { data: ch }, { data: sp }, { data: mb }] = await Promise.all([
     sb.from("orders").select(ORDER_SELECT).eq("id", id).maybeSingle(),
     // Read separately so the invoice still works before migration 0004 is applied.
     sb.from("orders").select("upi_channel").eq("id", id).maybeSingle(),
     sb.from("orders").select("split_cash, split_upi, split_card").eq("id", id).maybeSingle(),
+    sb.from("orders").select("member_no, member_plan").eq("id", id).maybeSingle(),
   ]);
   if (error) {
     console.error(`Error fetching order ${id} from DB:`, error);
@@ -204,6 +220,10 @@ export async function getOrder(id: string): Promise<StoredOrder | null> {
   if (!data) return null;
   const order = mapOrder(data);
   order.upi_channel = (ch as { upi_channel?: string | null } | null)?.upi_channel ?? null;
+  if (mb) {
+    order.member_no = (mb as any).member_no ?? null;
+    order.member_plan = (mb as any).member_plan ?? null;
+  }
   if (sp) {
     order.split_cash = num(sp.split_cash);
     order.split_upi = num(sp.split_upi);
@@ -244,6 +264,10 @@ export async function saveOrder(order: StoredOrder): Promise<void> {
       .update({ split_cash: order.split_cash ?? 0, split_upi: order.split_upi ?? 0, split_card: order.split_card ?? 0 })
       .eq("id", order.id);
     if (spErr) console.error("Could not save the split amounts (is migration 0008 applied?):", spErr.message);
+  }
+  if (order.member_no) {
+    const { error: mErr } = await sb.from("orders").update({ member_no: order.member_no, member_plan: order.member_plan ?? "" }).eq("id", order.id);
+    if (mErr) console.error("Could not save the membership on the bill (is migration 0013 applied?):", mErr.message);
   }
   // Deduct stock only the first time a bill is saved (saves are upserts).
   if (isNew) {

@@ -136,6 +136,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
             <p className={lab}>Billed to</p>
             <p className="mt-1.5 text-[15px] font-bold text-black">{order.customer_name || "Guest"}</p>
             {phone && <p className="font-mono text-[12.5px] text-slate-600">+91 {phone}</p>}
+            {order.member_no && <p className="mt-0.5 text-[12px] font-semibold text-[#C1272D]">Member {order.member_no}{order.member_plan ? ` · ${order.member_plan}` : ""}</p>}
           </div>
           <div className="text-right">
             <p className={lab}>Place of supply</p>
@@ -206,7 +207,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
               <div className="flex justify-between"><span className="text-slate-700">Subtotal</span><span className="font-mono font-semibold text-black">{money(order.subtotal)}</span></div>
               {order.discount_amount > 0 && (
                 <div className="flex justify-between">
-                  <span className="text-slate-700">Discount{order.discount_type === "PERCENT" && order.discount_value ? ` (${order.discount_value}%)` : ""}</span>
+                  <span className="text-slate-700">{order.member_no ? `Member discount · ${order.member_plan || "Member"}` : "Discount"}{order.discount_type === "PERCENT" && order.discount_value ? ` (${order.discount_value}%)` : ""}</span>
                   <span className="font-mono font-semibold text-[#C1272D]">− {money(order.discount_amount)}</span>
                 </div>
               )}
@@ -259,6 +260,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
         <div className="rc-row"><span>{order.id}</span><span>{modeLabel}</span></div>
         <p>{when}</p>
         <p>{order.customer_name || "Walk-in customer"}{phone ? ` · +91 ${phone}` : ""}</p>
+        {order.member_no && <p>Member {order.member_no}{order.member_plan ? ` · ${order.member_plan}` : ""}</p>}
         <hr />
         {lines.map((item, i) => (
           <div key={i} className="rc-item">
@@ -268,7 +270,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
         ))}
         <hr />
         <div className="rc-row"><span>Subtotal ({itemCount})</span><span>{money(order.subtotal)}</span></div>
-        {order.discount_amount > 0 && <div className="rc-row"><span>Discount{order.discount_type === "PERCENT" && order.discount_value ? ` (${order.discount_value}%)` : ""}</span><span>− {money(order.discount_amount)}</span></div>}
+        {order.discount_amount > 0 && <div className="rc-row"><span>{order.member_no ? "Member discount" : "Discount"}{order.discount_type === "PERCENT" && order.discount_value ? ` (${order.discount_value}%)` : ""}</span><span>− {money(order.discount_amount)}</span></div>}
         {order.delivery_fee > 0 && <div className="rc-row"><span>Delivery</span><span>{money(order.delivery_fee)}</span></div>}
         {gstItem ? (
           <>

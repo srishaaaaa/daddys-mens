@@ -6,7 +6,7 @@ import { getShopProfileAction, getShopSettingsAction } from "./settings-actions"
 import { listBillOffersAction, memberPhonesAction } from "./loyalty-actions";
 import { listExpensesAction } from "./expense-actions";
 import { listCouponsAction } from "./coupon-actions";
-import { listMembersAction } from "./membership-actions";
+import { membershipOverviewAction } from "./membership-actions";
 
 // Server actions run one after another from the browser, so ten small calls queue up.
 // This reads everything at once on the server and answers in a single round trip.
@@ -14,7 +14,7 @@ import { listMembersAction } from "./membership-actions";
 const soft = <T,>(p: Promise<T>) => p.then((v) => v, () => null);
 
 export async function bootstrapAction() {
-  const [products, orders, upi, profile, offers, expenses, coupons, settings, members, memberships] = await Promise.all([
+  const [products, orders, upi, profile, offers, expenses, coupons, settings, members, membership] = await Promise.all([
     listProductsAction(),
     listOrdersAction(),
     soft(getUpiConfigAction()),
@@ -24,7 +24,7 @@ export async function bootstrapAction() {
     soft(listCouponsAction()),
     soft(getShopSettingsAction()),
     soft(memberPhonesAction()),
-    soft(listMembersAction()),
+    soft(membershipOverviewAction()),
   ]);
-  return { products, orders, upi, profile, offers, expenses, coupons, settings, members, memberships };
+  return { products, orders, upi, profile, offers, expenses, coupons, settings, members, membership };
 }

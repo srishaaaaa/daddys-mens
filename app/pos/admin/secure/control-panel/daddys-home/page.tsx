@@ -49,7 +49,9 @@ import InstallAppButton from "@/app/install-app-button";
 import InventoryPanel from "./InventoryPanel";
 import CouponsPanel from "./CouponsPanel";
 import LoyaltyPanel, { prefetchLoyalty } from "./LoyaltyPanel";
-import MembershipPanel, { seedMemberships } from "./MembershipPanel";
+import MembershipPanel, { applyResult } from "./MembershipPanel";
+import MembershipBillingBox from "./MembershipBillingBox";
+import { EMPTY_OVERVIEW, type Overview } from "@/lib/membershipTypes";
 import { prefetchInventory } from "./InventoryPanel";
 import { prefetchCoupons } from "./CouponsPanel";
 import { prefetchExpenses } from "./ExpensesPanel";
@@ -133,6 +135,9 @@ type CompletedOrder = {
   splitCard?: number;
   /** saved GST flag; undefined on bills from before it existed */
   isGst?: boolean;
+  /** membership discount applied on this bill */
+  memberNo?: string | null;
+  memberPlan?: string | null;
   date: string;
   status: "Completed" | "Pending";
 };
@@ -387,6 +392,7 @@ function OrderBody({ o }: { o: CompletedOrder }) {
                     <span className="mt-1.5 inline-block rounded bg-slate-100 px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wide text-slate-800">{isGst ? "GST bill" : "Non-GST bill"}</span>
                   </div>
                   <div><p className={lab}>Date &amp; time</p><p className="mt-1 text-[15px] text-black">{new Date(o.date).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" })}</p></div>
+                  {o.memberNo && <div><p className={lab}>Membership</p><p className="mt-1 text-[15px] text-black">{o.memberNo}{o.memberPlan ? ` · ${o.memberPlan}` : ""}</p></div>}
                   <div><p className={lab}>Payment</p><p className="mt-1 text-[15px] text-black">{o.paymentMethod === "GPAY" ? "UPI" : o.paymentMethod === "SPLIT" ? [o.splitCash ? `Cash ${money(o.splitCash)}` : "", o.splitUpi ? `UPI ${money(o.splitUpi)}` : "", o.splitCard ? `Card ${money(o.splitCard)}` : ""].filter(Boolean).join(" + ") || "Split" : o.paymentMethod === "CARD" ? "Card" : "Cash"}</p></div>
                 </div>
 
@@ -405,7 +411,7 @@ function OrderBody({ o }: { o: CompletedOrder }) {
 
                 <div className="mt-3 space-y-2 border-t border-black/10 pt-4 text-[15px]">
                   <div className="flex justify-between"><span className="text-slate-700">Subtotal</span><b className="text-black">{money(o.subtotal)}</b></div>
-                  {o.discount > 0 && <div className="flex justify-between"><span className="text-slate-700">Discount{o.discountType === "PERCENT" && o.discountValue ? ` (${o.discountValue}%)` : ""}</span><b className="text-black">-{money(o.discount)}</b></div>}
+                  {o.discount > 0 && <div className="flex justify-between"><span className="text-slate-700">{o.memberNo ? `Member discount · ${o.memberPlan || "Member"}` : "Discount"}{o.discountType === "PERCENT" && o.discountValue ? ` (${o.discountValue}%)` : ""}</span><b className="text-black">-{money(o.discount)}</b></div>}
                   {o.deliveryFee > 0 && <div className="flex justify-between"><span className="text-slate-700">Delivery</span><b className="text-black">{money(o.deliveryFee)}</b></div>}
                   {gstLine && <div className="flex justify-between"><span className="text-slate-700">{gstLine.name}</span><b className="text-black">{money(gstAmt)}</b></div>}
                   <div className="flex items-baseline justify-between pt-2">
@@ -539,6 +545,9 @@ export default function POSBilling() {
   const [editingCatalogId, setEditingCatalogId] = useState<string | null>(null);
   const [activeInvoiceId, setActiveInvoiceId] = useState<string | null>(null);
   const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
+  // Membership: plans, members and fees (from the first load), and the member discount on the current bill.
+  const [mship, setMship] = useState<Overview>(EMPTY_OVERVIEW);
+  const [mshipApplied, setMshipApplied] = useState<{ memberNo: string; plan: string; pct: number; phone: string } | null>(null);
 
   // Analytics filter/navigation states
   // Expense amounts and dates, for Net Profit on the dashboard (admin only; empty for staff).
@@ -671,6 +680,8 @@ export default function POSBilling() {
             splitUpi: o.split_upi ?? 0,
             splitCard: o.split_card ?? 0,
             isGst: o.is_gst,
+            memberNo: o.member_no ?? null,
+            memberPlan: o.member_plan ?? null,
             date: o.created_at,
             status: (o.status === "COMPLETED" ? "Completed" : "Pending") as
               | "Completed"
@@ -713,7 +724,7 @@ export default function POSBilling() {
       if (boot.upi) setUpiCfg(boot.upi);
       if (boot.settings) seedSettings(boot.settings);
       if (boot.members) setMemberPhones(boot.members);
-      if (boot.memberships) seedMemberships(boot.memberships);
+      if (boot.membership) setMship(boot.membership);
       // Warm the other tabs in the background so they open instantly (these quietly do nothing for staff).
       void prefetchLoyalty();
       void prefetchInventory();
@@ -990,6 +1001,10 @@ export default function POSBilling() {
     discountType === "percent"
       ? subtotal * (discountValue / 100)
       : discountValue;
+  // The member discount lives in the same discount slot as coupons and the manual discount, so it can never be
+  // added on top of them; changing either one switches it off by itself.
+  const memberDiscountOn =
+    !!mshipApplied && mshipApplied.phone === customerPhone && discountType === "percent" && discountValue === mshipApplied.pct && selectedCoupon === "none";
   // Loyalty: the cap comes from the shop's rules; the server re-checks everything when the bill is saved.
   const memberAvailable = member?.customer?.available ?? 0;
   const giftPointsReserved = member?.customer
@@ -1187,6 +1202,8 @@ export default function POSBilling() {
         gst_inclusive: applyGST && gstInclusive,
         gst_percent: applyGST ? gstPercentage : 0,
         gst_amount: applyGST ? gstAmount : 0,
+        member_no: memberDiscountOn ? mshipApplied!.memberNo : null,
+        member_plan: memberDiscountOn ? mshipApplied!.plan : null,
         upi_channel: paymentMethod === "GPAY" || (paymentMethod === "SPLIT" && Number(splitUpi) > 0) ? upiVia || defaultUpiVia : null,
         split_cash: paymentMethod === "SPLIT" ? Number(splitCash) || 0 : 0,
         split_upi: paymentMethod === "SPLIT" ? Number(splitUpi) || 0 : 0,
@@ -1264,6 +1281,8 @@ export default function POSBilling() {
       grandTotal,
       cashReceived: actualCashReceived,
       paymentMethod,
+      memberNo: memberDiscountOn ? mshipApplied!.memberNo : null,
+      memberPlan: memberDiscountOn ? mshipApplied!.plan : null,
       date: createdAt,
       status: "Completed",
     };
@@ -1283,6 +1302,7 @@ export default function POSBilling() {
     setSelectedCoupon("none");
     setCouponInput("");
     setCouponMsg(null);
+    setMshipApplied(null);
     setUpiVia("");
     setLinkSent(false);
     setPointsToUse(0);
@@ -2549,6 +2569,27 @@ export default function POSBilling() {
                       </div>
                     </div>
                   </div>
+
+                  <MembershipBillingBox
+                    phone={customerPhone}
+                    name={customerName}
+                    members={mship.members}
+                    plans={mship.plans}
+                    applied={memberDiscountOn}
+                    onApply={(m, pct) => {
+                      setDiscountType("percent");
+                      setDiscountValue(pct);
+                      setSelectedCoupon("none");
+                      setCouponInput("");
+                      setCouponMsg(null);
+                      setMshipApplied({ memberNo: m.memberNo, plan: m.planName, pct, phone: m.phone });
+                    }}
+                    onRemove={() => {
+                      setDiscountValue(0);
+                      setMshipApplied(null);
+                    }}
+                    onRegistered={(m, delta) => setMship((d) => applyResult(d, { member: m, revenueDelta: delta }))}
+                  />
                 </div>
 
 
@@ -3495,7 +3536,7 @@ export default function POSBilling() {
         {role === "admin" && activeTab === "expenses" && <ExpensesPanel />}
         {role === "admin" && activeTab === "settings" && <SettingsPanel />}
         {activeTab === "loyalty" && <LoyaltyPanel admin={role === "admin"} />}
-        {activeTab === "membership" && <MembershipPanel shop={shopProfile.shopName} />}
+        {activeTab === "membership" && <MembershipPanel shop={shopProfile.shopName} admin={role === "admin"} data={mship} setData={setMship} />}
 
         {role === "admin" && activeTab === "orders" && (
           <div className="flex-1 flex flex-col max-w-[1400px] mx-auto w-full pb-8 pr-2 animate-in fade-in duration-300">
